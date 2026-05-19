@@ -1,0 +1,441 @@
+:root {
+  --green-900: #00645f;
+  --green-800: #0f6f62;
+  --green-700: #207a66;
+  --green-500: #2ca58d;
+  --green-300: #6fcf97;
+  --green-100: #dff3ea;
+  --mist: #eaf4f1;
+  --line: #bfd9d3;
+  --page: #eeeeee;
+  --card: #ffffff;
+  --danger: #dc143c;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--green-900);
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.attendance-page {
+  min-height: 100vh;
+  background: var(--page);
+}
+
+.topbar {
+  height: 103px;
+  background: var(--green-700);
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.topbar-inner {
+  width: min(1540px, calc(100% - 48px));
+  height: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+.icon-button {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  color: #ffffff;
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.topbar p {
+  margin: 5px 0 0;
+  color: var(--green-300);
+  font-size: 16px;
+}
+
+.page-content {
+  width: min(1540px, calc(100% - 48px));
+  margin: 30px auto 48px;
+  display: grid;
+  gap: 30px;
+}
+
+.panel {
+  background: var(--card);
+  border-radius: 17px;
+  box-shadow: var(--shadow);
+}
+
+.panel h2 {
+  margin: 0;
+  color: var(--green-900);
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.filter-panel {
+  padding: 34px 30px 30px;
+}
+
+.filter-grid {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.field {
+  display: grid;
+  gap: 12px;
+  color: var(--green-900);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.date-control,
+.select-control {
+  height: 61px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #eeeeee;
+  overflow: hidden;
+}
+
+.date-control input,
+.select-control select {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--green-900);
+  background: transparent;
+  padding: 0 50px 0 22px;
+  font-size: 19px;
+  letter-spacing: 0;
+}
+
+.date-control input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  position: absolute;
+  right: 18px;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.date-control svg,
+.select-control svg {
+  position: absolute;
+  right: 20px;
+  pointer-events: none;
+  color: #ffffff;
+}
+
+.select-control svg {
+  color: var(--green-800);
+}
+
+.select-control select {
+  appearance: none;
+  cursor: pointer;
+}
+
+.action-row {
+  margin-top: 30px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.export-button {
+  height: 60px;
+  min-width: 230px;
+  border: 0;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #ffffff;
+  font-size: 19px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.export-button.excel {
+  background: var(--green-700);
+}
+
+.export-button.pdf {
+  background: var(--danger);
+}
+
+.export-button:hover {
+  filter: brightness(0.96);
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 30px;
+}
+
+.chart-card {
+  min-height: 420px;
+  padding: 33px 30px 28px;
+}
+
+.chart-card.wide {
+  min-height: 455px;
+}
+
+.pie-layout {
+  display: grid;
+  gap: 12px;
+}
+
+.status-list {
+  display: grid;
+  gap: 18px;
+  font-size: 20px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.status-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-row i {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex: 0 0 auto;
+}
+
+.status-row strong {
+  font-weight: 500;
+}
+
+.summary-panel {
+  padding: 34px 30px 30px;
+}
+
+.summary-grid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.stat-card {
+  min-height: 103px;
+  padding: 22px 20px;
+  border-radius: 11px;
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  background: var(--mist);
+}
+
+.stat-card.success {
+  background: var(--green-100);
+}
+
+.stat-card.neutral {
+  background: #eeeeee;
+}
+
+.stat-card span {
+  font-size: 16px;
+}
+
+.stat-card strong {
+  font-size: 23px;
+  line-height: 1.1;
+}
+
+.table-panel {
+  padding: 34px 30px 30px;
+}
+
+.table-wrap {
+  margin-top: 28px;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 820px;
+}
+
+th,
+td {
+  padding: 20px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 20px;
+}
+
+th {
+  font-weight: 800;
+}
+
+.percentage-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  min-height: 34px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: var(--green-300);
+  color: var(--green-900);
+  font-size: 16px;
+}
+
+.recharts-wrapper text {
+  fill: var(--green-900);
+  font-size: 18px;
+}
+
+.recharts-legend-item-text {
+  color: var(--green-900) !important;
+}
+
+@media (max-width: 1100px) {
+  .filter-grid,
+  .chart-grid,
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-card {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    height: 88px;
+  }
+
+  .topbar-inner,
+  .page-content {
+    width: min(100% - 28px, 1540px);
+  }
+
+  .topbar-inner {
+    gap: 14px;
+  }
+
+  .topbar h1 {
+    font-size: 21px;
+  }
+
+  .topbar p,
+  .stat-card span {
+    font-size: 14px;
+  }
+
+  .page-content {
+    margin-top: 18px;
+    gap: 18px;
+  }
+
+  .panel {
+    border-radius: 13px;
+  }
+
+  .panel h2 {
+    font-size: 19px;
+  }
+
+  .filter-panel,
+  .chart-card,
+  .summary-panel,
+  .table-panel {
+    padding: 22px 18px;
+  }
+
+  .field,
+  .date-control input,
+  .select-control select,
+  .export-button,
+  .status-list,
+  th,
+  td {
+    font-size: 16px;
+  }
+
+  .export-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .stat-card strong {
+    font-size: 20px;
+  }
+}
+
+@media print {
+  .topbar,
+  .action-row {
+    display: none;
+  }
+
+  .attendance-page {
+    background: #ffffff;
+  }
+
+  .page-content {
+    width: 100%;
+    margin: 0;
+    gap: 18px;
+  }
+
+  .panel {
+    box-shadow: none;
+    border: 1px solid #d9e6e2;
+    break-inside: avoid;
+  }
+}
