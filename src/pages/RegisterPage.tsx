@@ -43,51 +43,46 @@ function RegisterPage() {
     setLoading(true);
 
     try {
-      // 1. Register User
+      // 1. Register User + Peserta sekaligus (semua field wajib dikirim dalam satu request)
       await api.post('/register', {
         nama: nama.trim(),
         email: email.trim().toLowerCase(),
         password,
+        nim_nis: nimNis.trim(),
+        asal_instansi: asalInstansi.trim(),
+        jurusan: jurusan.trim(),
+        no_hp: noHp.trim() || undefined,
       });
 
-      // 2. Auto Login to get token for next steps
+      // 2. Auto Login untuk mendapatkan token
       const loginRes = await api.post('/login', {
         email: email.trim().toLowerCase(),
         password,
       });
       const token = loginRes.data?.data?.token;
-      const userData = loginRes.data?.data?.user;
 
-      if (!token || !userData) {
+      if (!token) {
         throw new Error('Gagal mendapatkan token autentikasi.');
       }
 
-      // Temporary axios config with the new token
-      const authConfig = {
-        headers: { Authorization: `Bearer ${token}` }
-      };
-
-      // 3. Create Peserta using User ID
-      await api.post('/peserta', {
-        id_user: userData.id_user,
-        nim_nis: nimNis.trim(),
-        asal_instansi: asalInstansi.trim(),
-        jurusan: jurusan.trim(),
-        no_hp: noHp.trim(),
-      }, authConfig);
-
-      // 4. Create Pendaftaran (Upload File Surat)
+      // 3. Upload File Surat Pengantar
       const fd = new FormData();
-      fd.append('file_surat', fileSurat);
+      fd.append('file_surat', fileSurat!);
       await api.post('/pendaftaran', fd, {
-        headers: { ...authConfig.headers, 'Content-Type': 'multipart/form-data' }
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
       });
 
-      // Show success and redirect to login (forcing them to login normally, or redirect to dashboard directly)
       setSuccess('Registrasi dan pendaftaran PKL berhasil! Silakan masuk ke akun Anda.');
       setTimeout(() => navigate('/login'), 2500);
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Registrasi gagal. Silakan periksa kembali data Anda.';
+      const msgRaw = err.response?.data?.message;
+      // Jika message berupa array (validation errors), gabungkan
+      const msg = Array.isArray(msgRaw)
+        ? msgRaw.join(', ')
+        : msgRaw || 'Registrasi gagal. Silakan periksa kembali data Anda.';
       setError(String(msg));
     } finally {
       setLoading(false);
