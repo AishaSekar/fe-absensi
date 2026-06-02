@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import '../../css/Dashboard.css';
+import LaporanAbsensi from './Laporan';
 
 interface User {
   id_user: number;
@@ -14,7 +15,6 @@ interface DashboardStats {
   total_peserta: number;
   hadir_hari_ini: number;
   telat_hari_ini: number;
-  pending_pendaftaran: number;
 }
 
 interface Peserta {
@@ -26,15 +26,6 @@ interface Peserta {
   no_hp?: string;
   status_pkl: string;
   created_at: string;
-  user?: { nama: string; email: string };
-}
-
-interface PendaftaranRecord {
-  id_pendaftaran: number;
-  id_user: number;
-  status: string;
-  tanggal_daftar: string;
-  file_surat: string;
   user?: { nama: string; email: string };
 }
 
@@ -62,11 +53,8 @@ function AdminDashboard() {
   // Peserta
   const [pesertaList, setPesertaList] = useState<Peserta[]>([]);
   const [loadingPeserta, setLoadingPeserta] = useState(false);
-
-  // Pendaftaran
-  const [pendaftaranList, setPendaftaranList] = useState<PendaftaranRecord[]>([]);
-  const [loadingPendaftaran, setLoadingPendaftaran] = useState(false);
   const [verifikasiMsg, setVerifikasiMsg] = useState({ type: '', text: '' });
+  const [processingPesertaId, setProcessingPesertaId] = useState<number | null>(null);
 
   // Absensi
   const [absensiList, setAbsensiList] = useState<AbsensiRecord[]>([]);
@@ -78,9 +66,9 @@ function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (activeMenu === 'dashboard') fetchStats();
+    if (activeMenu === 'dashboard') { fetchStats(); fetchPeserta(); }
     if (activeMenu === 'peserta') fetchPeserta();
-    if (activeMenu === 'pendaftaran') fetchPendaftaran();
+    if (activeMenu === 'pendaftaran') fetchPeserta();
     if (activeMenu === 'absensi') fetchAbsensi();
   }, [activeMenu]);
 
@@ -102,15 +90,6 @@ function AdminDashboard() {
     finally { setLoadingPeserta(false); }
   };
 
-  const fetchPendaftaran = async () => {
-    setLoadingPendaftaran(true);
-    try {
-      const res = await api.get('/pendaftaran');
-      setPendaftaranList(res.data.data || []);
-    } catch { setPendaftaranList([]); }
-    finally { setLoadingPendaftaran(false); }
-  };
-
   const fetchAbsensi = async () => {
     setLoadingAbsensi(true);
     try {
@@ -120,18 +99,6 @@ function AdminDashboard() {
     finally { setLoadingAbsensi(false); }
   };
 
-  const handleVerifikasi = async (id: number, status: 'diterima' | 'ditolak') => {
-    setVerifikasiMsg({ type: '', text: '' });
-    try {
-      await api.put(`/pendaftaran/${id}/verifikasi`, { status });
-      setVerifikasiMsg({ type: 'success', text: `Pendaftaran berhasil ${status}` });
-      fetchPendaftaran();
-      fetchStats();
-    } catch (err: any) {
-      setVerifikasiMsg({ type: 'error', text: err.response?.data?.message || 'Gagal memverifikasi' });
-    }
-  };
-
   const handleDeletePeserta = async (id: number) => {
     if (!confirm('Yakin ingin menghapus peserta ini?')) return;
     try {
@@ -139,6 +106,53 @@ function AdminDashboard() {
       fetchPeserta();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Gagal menghapus peserta');
+    }
+  };
+
+  const updatePesertaStatus = async (id: number, status: 'diterima' | 'ditolak') => {
+    const requests = [
+      () => api.put(`/peserta/${id}`, { status_pkl: status }),
+      () => api.patch(`/peserta/${id}`, { status_pkl: status }),
+      () => api.put(`/peserta/${id}/status`, { status_pkl: status }),
+      () => api.put(`/peserta/${id}/verifikasi`, { status_pkl: status, status }),
+    ];
+
+    let lastError: any;
+
+    for (const request of requests) {
+      try {
+        await request();
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if ([401, 403].includes(error.response?.status)) break;
+      }
+    }
+
+    throw lastError;
+  };
+
+  const handleVerifikasiPeserta = async (id: number, status: 'diterima' | 'ditolak') => {
+    const actionText = status === 'diterima' ? 'menerima' : 'menolak';
+    if (!confirm(`Yakin ingin ${actionText} peserta ini?`)) return;
+
+    setProcessingPesertaId(id);
+    setVerifikasiMsg({ type: '', text: '' });
+
+    try {
+      await updatePesertaStatus(id, status);
+      setPesertaList((list) => list.map((item) => (
+        item.id_peserta === id ? { ...item, status_pkl: status } : item
+      )));
+      setVerifikasiMsg({ type: 'success', text: `Peserta berhasil ${status}.` });
+      fetchStats();
+    } catch (err: any) {
+      setVerifikasiMsg({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal memproses status peserta. Pastikan backend menyediakan endpoint update status peserta.',
+      });
+    } finally {
+      setProcessingPesertaId(null);
     }
   };
 
@@ -156,6 +170,7 @@ function AdminDashboard() {
     { id: 'peserta', label: 'Data Peserta', icon: 'users' },
     { id: 'absensi', label: 'Data Absensi', icon: 'clock' },
     { id: 'pendaftaran', label: 'Pendaftaran', icon: 'file' },
+    { id: 'laporan', label: 'Laporan', icon: 'file' },
   ];
 
   const getIcon = (icon: string) => {
@@ -172,8 +187,11 @@ function AdminDashboard() {
     if (activeMenu === 'peserta') return 'Data Peserta';
     if (activeMenu === 'absensi') return 'Data Absensi';
     if (activeMenu === 'pendaftaran') return 'Verifikasi Pendaftaran';
+    if (activeMenu === 'laporan') return 'Laporan Absensi';
     return 'Dashboard Admin';
   };
+
+  const pendingPeserta = pesertaList.filter((p) => p.status_pkl?.toLowerCase() === 'pending');
 
   return (
     <div className="dashboard-layout">
@@ -223,7 +241,7 @@ function AdminDashboard() {
               <div className="welcome-card" style={{ background: 'linear-gradient(135deg, #0f3d24 0%, #1a5c38 50%, #2d8a56 100%)' }}>
                 <div className="welcome-content">
                   <h3>Panel Admin 🛡️</h3>
-                  <p>Kelola peserta PKL, verifikasi pendaftaran, dan pantau absensi.</p>
+                  <p>Kelola peserta PKL, pantau absensi, dan buka laporan.</p>
                 </div>
               </div>
 
@@ -253,7 +271,7 @@ function AdminDashboard() {
                     <div className="dash-stat-icon" style={{ background: '#fee2e2', color: '#ef4444' }}>
                       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                     </div>
-                    <div className="dash-stat-info"><div className="dash-stat-value" style={{ color: '#ef4444' }}>{stats?.pending_pendaftaran || 0}</div><div className="dash-stat-label">Pending Daftar</div></div>
+                    <div className="dash-stat-info"><div className="dash-stat-value" style={{ color: '#ef4444' }}>{pendingPeserta.length}</div><div className="dash-stat-label">Pending Daftar</div></div>
                   </div>
                 </div>
               )}
@@ -269,8 +287,8 @@ function AdminDashboard() {
                 <div className="dash-table-card" style={{ cursor: 'pointer' }} onClick={() => setActiveMenu('pendaftaran')}>
                   <div className="dash-table-header"><h3>Pendaftaran</h3><span className="dash-table-link">Verifikasi →</span></div>
                   <div style={{ padding: '1.5rem', textAlign: 'center', color: '#5a5a6e' }}>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#ef4444' }}>{stats?.pending_pendaftaran || 0}</div>
-                    <div style={{ fontSize: '0.85rem' }}>Menunggu verifikasi</div>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#ef4444' }}>{pendingPeserta.length}</div>
+                    <div style={{ fontSize: '0.85rem' }}>Menunggu keputusan admin</div>
                   </div>
                 </div>
               </div>
@@ -280,6 +298,9 @@ function AdminDashboard() {
           {/* ======= DATA PESERTA ======= */}
           {activeMenu === 'peserta' && (
             <div className="dashboard-home">
+              {verifikasiMsg.text && (
+                <div className={`dashboard-alert dashboard-alert-${verifikasiMsg.type}`}>{verifikasiMsg.text}</div>
+              )}
               <div className="dash-table-card">
                 <div className="dash-table-header">
                   <h3>Daftar Peserta PKL ({pesertaList.length})</h3>
@@ -299,15 +320,74 @@ function AdminDashboard() {
                             <td>{p.asal_instansi}</td>
                             <td>{p.jurusan}</td>
                             <td>{p.no_hp || '-'}</td>
-                            <td><span className={`status-badge status-${p.status_pkl}`}>{p.status_pkl}</span></td>
+                            <td><span className={`status-badge status-${p.status_pkl?.toLowerCase()}`}>{p.status_pkl}</span></td>
                             <td>
-                              <button onClick={() => handleDeletePeserta(p.id_peserta)} className="btn-action-delete" title="Hapus">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                              </button>
+                              <div className="table-actions">
+                                {p.status_pkl?.toLowerCase() === 'pending' && (
+                                  <>
+                                    <button onClick={() => handleVerifikasiPeserta(p.id_peserta, 'diterima')} className="btn-action-accept" title="Terima" disabled={processingPesertaId === p.id_peserta}>
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </button>
+                                    <button onClick={() => handleVerifikasiPeserta(p.id_peserta, 'ditolak')} className="btn-action-reject" title="Tolak" disabled={processingPesertaId === p.id_peserta}>
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    </button>
+                                  </>
+                                )}
+                                <button onClick={() => handleDeletePeserta(p.id_peserta)} className="btn-action-delete" title="Hapus">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
                         {pesertaList.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data peserta</td></tr>}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======= VERIFIKASI PENDAFTARAN ======= */}
+          {activeMenu === 'pendaftaran' && (
+            <div className="dashboard-home">
+              {verifikasiMsg.text && (
+                <div className={`dashboard-alert dashboard-alert-${verifikasiMsg.type}`}>{verifikasiMsg.text}</div>
+              )}
+              <div className="dash-table-card">
+                <div className="dash-table-header">
+                  <h3>Menunggu Verifikasi ({pendingPeserta.length})</h3>
+                </div>
+                <div className="dash-table-wrapper">
+                  {loadingPeserta ? (
+                    <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
+                  ) : (
+                    <table className="dash-table">
+                      <thead><tr><th>No</th><th>Nama</th><th>Email</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>Status</th><th>Aksi</th></tr></thead>
+                      <tbody>
+                        {pendingPeserta.map((p, i) => (
+                          <tr key={p.id_peserta}>
+                            <td>{i + 1}</td>
+                            <td style={{ fontWeight: 600 }}>{p.user?.nama || '-'}</td>
+                            <td>{p.user?.email || '-'}</td>
+                            <td>{p.nim_nis}</td>
+                            <td>{p.asal_instansi}</td>
+                            <td>{p.jurusan}</td>
+                            <td><span className={`status-badge status-${p.status_pkl?.toLowerCase()}`}>{p.status_pkl}</span></td>
+                            <td>
+                              <div className="table-actions">
+                                <button onClick={() => handleVerifikasiPeserta(p.id_peserta, 'diterima')} className="btn-action-accept" title="Terima" disabled={processingPesertaId === p.id_peserta}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                </button>
+                                <button onClick={() => handleVerifikasiPeserta(p.id_peserta, 'ditolak')} className="btn-action-reject" title="Tolak" disabled={processingPesertaId === p.id_peserta}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {pendingPeserta.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#8a8a9e' }}>Tidak ada pendaftaran yang menunggu verifikasi</td></tr>}
                       </tbody>
                     </table>
                   )}
@@ -350,59 +430,7 @@ function AdminDashboard() {
             </div>
           )}
 
-          {/* ======= VERIFIKASI PENDAFTARAN ======= */}
-          {activeMenu === 'pendaftaran' && (
-            <div className="dashboard-home">
-              {verifikasiMsg.text && (
-                <div className={`auth-${verifikasiMsg.type} animate-fade-in`}><span>{verifikasiMsg.text}</span></div>
-              )}
-              <div className="dash-table-card">
-                <div className="dash-table-header">
-                  <h3>Pendaftaran PKL ({pendaftaranList.length})</h3>
-                </div>
-                <div className="dash-table-wrapper">
-                  {loadingPendaftaran ? (
-                    <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
-                  ) : (
-                    <table className="dash-table">
-                      <thead><tr><th>No</th><th>Nama</th><th>Email</th><th>Tanggal Daftar</th><th>File Surat</th><th>Status</th><th>Aksi</th></tr></thead>
-                      <tbody>
-                        {pendaftaranList.map((p, i) => (
-                          <tr key={p.id_pendaftaran}>
-                            <td>{i + 1}</td>
-                            <td style={{ fontWeight: 600 }}>{p.user?.nama || '-'}</td>
-                            <td>{p.user?.email || '-'}</td>
-                            <td>{formatDateStr(p.tanggal_daftar)}</td>
-                            <td>
-                              <a href={`http://localhost:8080/${p.file_surat}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1a5c38', fontWeight: 600, textDecoration: 'none', fontSize: '0.82rem' }}>
-                                📄 Lihat File
-                              </a>
-                            </td>
-                            <td><span className={`status-badge status-${p.status}`}>{p.status}</span></td>
-                            <td>
-                              {p.status === 'pending' ? (
-                                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                  <button onClick={() => handleVerifikasi(p.id_pendaftaran, 'diterima')} className="btn-action-accept" title="Terima">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                  </button>
-                                  <button onClick={() => handleVerifikasi(p.id_pendaftaran, 'ditolak')} className="btn-action-reject" title="Tolak">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                  </button>
-                                </div>
-                              ) : (
-                                <span style={{ fontSize: '0.8rem', color: '#8a8a9e' }}>Sudah diproses</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                        {pendaftaranList.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada pendaftaran</td></tr>}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {activeMenu === 'laporan' && <LaporanAbsensi />}
         </div>
       </main>
     </div>

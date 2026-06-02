@@ -502,6 +502,143 @@
   color: #7c3aed;
 }
 
+.status-pending {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.status-diterima,
+.status-aktif {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.status-ditolak,
+.status-selesai {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-action-accept,
+.btn-action-reject,
+.btn-action-delete {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+}
+
+.btn-action-accept {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.btn-action-reject,
+.btn-action-delete {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.btn-action-accept:hover,
+.btn-action-reject:hover,
+.btn-action-delete:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.97);
+}
+
+.btn-action-accept:disabled,
+.btn-action-reject:disabled,
+.btn-action-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.dashboard-alert {
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.dashboard-alert-success {
+  background: #d1fae5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.dashboard-alert-error {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.registration-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  max-width: 760px;
+}
+
+.activity-list {
+  padding: 0.75rem 1.5rem 1.5rem;
+}
+
+.activity-item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 0.9rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid #f0f4f2;
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+}
+
+.activity-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 0.35rem;
+  border-radius: 999px;
+  background: #1a5c38;
+  box-shadow: 0 0 0 4px #d1fae5;
+}
+
+.activity-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.activity-content strong {
+  color: #0f3d24;
+  font-size: 0.92rem;
+}
+
+.activity-content span {
+  color: #5a5a6e;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.activity-content small {
+  color: #8a8a9e;
+  font-size: 0.78rem;
+}
+
 
 /* Placeholder Content */
 .placeholder-content {
@@ -574,6 +711,9 @@
   }
   .stats-grid {
     grid-template-columns: 1fr 1fr;
+  }
+  .registration-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 

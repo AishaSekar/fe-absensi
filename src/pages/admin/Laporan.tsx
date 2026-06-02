@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -21,26 +21,50 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import "./LaporanAbsensi.css";
+import api from "../../config/api";
+import "../../css/LaporanAbsensi.css";
 
-const institutions = ["Semua Institusi", "UHAMKA", "SMK N 1", "SMK N 2"];
+type Peserta = {
+  id_peserta: number;
+  nim_nis?: string;
+  asal_instansi?: string;
+  institusi?: string;
+  jurusan?: string;
+  status_pkl?: string;
+  user?: {
+    nama?: string;
+    email?: string;
+  };
+};
 
-const participants = [
-  { name: "Ahmad Fauzi", institution: "UHAMKA", present: 42, late: 3, absent: 1 },
-  { name: "Siti Nurhaliza", institution: "SMK N 1", present: 40, late: 5, absent: 1 },
-  { name: "Budi Santoso", institution: "UHAMKA", present: 44, late: 2, absent: 0 },
-  { name: "Rina Kartika", institution: "SMK N 2", present: 39, late: 4, absent: 3 },
-  { name: "Dimas Pratama", institution: "SMK N 1", present: 41, late: 2, absent: 1 },
-  { name: "Maya Lestari", institution: "UHAMKA", present: 43, late: 1, absent: 2 },
-];
+type AbsensiRecord = {
+  id_absensi: number;
+  id_peserta: number;
+  tanggal: string;
+  jam_masuk?: string;
+  jam_pulang?: string;
+  status: string;
+  lokasi?: string;
+  peserta?: {
+    nim_nis?: string;
+    asal_instansi?: string;
+    institusi?: string;
+    user?: {
+      nama?: string;
+    };
+  };
+};
 
-const dailyTrend = [
-  { date: "05/13", total: 39 },
-  { date: "05/14", total: 40 },
-  { date: "05/15", total: 36 },
-  { date: "05/16", total: 39 },
-  { date: "05/19", total: 39 },
-];
+type ReportRow = {
+  id: number;
+  name: string;
+  number: string;
+  institution: string;
+  present: number;
+  late: number;
+  absent: number;
+  percentage: number;
+};
 
 const COLORS = {
   present: "#207a66",
@@ -49,7 +73,7 @@ const COLORS = {
   text: "#00645f",
 };
 
-function formatDate(value) {
+function formatDate(value: string) {
   if (!value) return "-";
 
   const date = new Date(value);
@@ -61,7 +85,29 @@ function formatDate(value) {
   });
 }
 
-function downloadCsv(filename, rows) {
+function formatChartDate(value: string) {
+  const date = new Date(value);
+
+  return date.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+function getDateOnly(value: string) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function normalizeStatus(value: string) {
+  const status = value.toLowerCase();
+
+  if (status.includes("telat")) return "late";
+  if (status.includes("alpha") || status.includes("tidak")) return "absent";
+  return "present";
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
   const csv = rows
     .map((row) =>
       row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")
@@ -79,7 +125,15 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
-function DateField({ label, value, onChange }) {
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -92,7 +146,15 @@ function DateField({ label, value, onChange }) {
   );
 }
 
-function StatCard({ label, value, variant = "soft" }) {
+function StatCard({
+  label,
+  value,
+  variant = "soft",
+}: {
+  label: string;
+  value: string | number;
+  variant?: string;
+}) {
   return (
     <div className={`stat-card ${variant}`}>
       <span>{label}</span>
@@ -102,18 +164,154 @@ function StatCard({ label, value, variant = "soft" }) {
 }
 
 export default function LaporanAbsensi() {
-  const [startDate, setStartDate] = useState("2026-05-01");
-  const [endDate, setEndDate] = useState("2026-05-19");
+  const today = new Date().toISOString().slice(0, 10);
+  const firstDayOfMonth = `${today.slice(0, 8)}01`;
+
+  const [startDate, setStartDate] = useState(firstDayOfMonth);
+  const [endDate, setEndDate] = useState(today);
   const [institution, setInstitution] = useState("Semua Institusi");
+  const [pesertaList, setPesertaList] = useState<Peserta[]>([]);
+  const [absensiList, setAbsensiList] = useState<AbsensiRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const filteredParticipants = useMemo(() => {
-    if (institution === "Semua Institusi") return participants;
+  useEffect(() => {
+    const fetchReportData = async () => {
+      setLoading(true);
+      setErrorMessage("");
 
-    return participants.filter((item) => item.institution === institution);
-  }, [institution]);
+      try {
+        const [pesertaRes, absensiRes] = await Promise.all([
+          api.get("/peserta"),
+          api.get("/absensi/history"),
+        ]);
+
+        setPesertaList(pesertaRes.data.data || pesertaRes.data || []);
+        setAbsensiList(absensiRes.data.data || absensiRes.data || []);
+      } catch (error: any) {
+        setPesertaList([]);
+        setAbsensiList([]);
+        setErrorMessage(
+          error.response?.data?.message || "Gagal memuat data laporan"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchReportData();
+  }, []);
+
+  const pesertaMap = useMemo(() => {
+    return new Map(pesertaList.map((item) => [item.id_peserta, item]));
+  }, [pesertaList]);
+
+  const institutions = useMemo(() => {
+    const values = new Set<string>();
+
+    pesertaList.forEach((item) => {
+      const name = item.asal_instansi || item.institusi;
+      if (name) values.add(name);
+    });
+
+    absensiList.forEach((item) => {
+      const name =
+        item.peserta?.asal_instansi ||
+        item.peserta?.institusi ||
+        pesertaMap.get(item.id_peserta)?.asal_instansi ||
+        pesertaMap.get(item.id_peserta)?.institusi;
+      if (name) values.add(name);
+    });
+
+    return ["Semua Institusi", ...Array.from(values).sort()];
+  }, [absensiList, pesertaList, pesertaMap]);
+
+  const filteredAbsensi = useMemo(() => {
+    return absensiList.filter((item) => {
+      const date = getDateOnly(item.tanggal);
+      const peserta = pesertaMap.get(item.id_peserta);
+      const itemInstitution =
+        peserta?.asal_instansi ||
+        peserta?.institusi ||
+        item.peserta?.asal_instansi ||
+        item.peserta?.institusi ||
+        "-";
+
+      const matchesDate = date >= startDate && date <= endDate;
+      const matchesInstitution =
+        institution === "Semua Institusi" || itemInstitution === institution;
+
+      return matchesDate && matchesInstitution;
+    });
+  }, [absensiList, endDate, institution, pesertaMap, startDate]);
+
+  const tableRows = useMemo<ReportRow[]>(() => {
+    const rows = new Map<number, ReportRow>();
+
+    pesertaList.forEach((peserta) => {
+      const pesertaInstitution = peserta.asal_instansi || peserta.institusi || "-";
+
+      if (
+        institution !== "Semua Institusi" &&
+        pesertaInstitution !== institution
+      ) {
+        return;
+      }
+
+      rows.set(peserta.id_peserta, {
+        id: peserta.id_peserta,
+        name: peserta.user?.nama || "-",
+        number: peserta.nim_nis || "-",
+        institution: pesertaInstitution,
+        present: 0,
+        late: 0,
+        absent: 0,
+        percentage: 0,
+      });
+    });
+
+    filteredAbsensi.forEach((item) => {
+      const peserta = pesertaMap.get(item.id_peserta);
+      const row =
+        rows.get(item.id_peserta) ||
+        ({
+          id: item.id_peserta,
+          name: item.peserta?.user?.nama || "-",
+          number: item.peserta?.nim_nis || peserta?.nim_nis || "-",
+          institution:
+            peserta?.asal_instansi ||
+            peserta?.institusi ||
+            item.peserta?.asal_instansi ||
+            item.peserta?.institusi ||
+            "-",
+          present: 0,
+          late: 0,
+          absent: 0,
+          percentage: 0,
+        } satisfies ReportRow);
+
+      const status = normalizeStatus(item.status);
+      if (status === "late") row.late += 1;
+      else if (status === "absent") row.absent += 1;
+      else row.present += 1;
+
+      rows.set(item.id_peserta, row);
+    });
+
+    return Array.from(rows.values())
+      .map((row) => {
+        const total = row.present + row.late + row.absent;
+
+        return {
+          ...row,
+          percentage: total ? (row.present / total) * 100 : 0,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredAbsensi, institution, pesertaList, pesertaMap]);
 
   const totals = useMemo(() => {
-    const summary = filteredParticipants.reduce(
+    const summary = tableRows.reduce(
       (acc, item) => {
         acc.present += item.present;
         acc.late += item.late;
@@ -128,10 +326,10 @@ export default function LaporanAbsensi() {
     return {
       ...summary,
       all,
-      active: 42,
+      active: tableRows.length,
       percentage: all ? (summary.present / all) * 100 : 0,
     };
-  }, [filteredParticipants]);
+  }, [tableRows]);
 
   const statusData = [
     { name: "Hadir", value: totals.present, color: COLORS.present },
@@ -140,34 +338,55 @@ export default function LaporanAbsensi() {
   ];
 
   const institutionData = useMemo(() => {
-    return institutions
-      .filter((item) => item !== "Semua Institusi")
-      .map((name) => {
-        const list = participants.filter((item) => item.institution === name);
+    const grouped = new Map<
+      string,
+      { institution: string; Hadir: number; Telat: number; Alpha: number }
+    >();
 
-        return {
-          institution: name,
-          Hadir: list.reduce((sum, item) => sum + item.present, 0),
-          Telat: list.reduce((sum, item) => sum + item.late, 0),
-          Alpha: list.reduce((sum, item) => sum + item.absent, 0),
-        };
-      });
-  }, []);
+    filteredAbsensi.forEach((item) => {
+      const peserta = pesertaMap.get(item.id_peserta);
+      const name =
+        peserta?.asal_instansi ||
+        peserta?.institusi ||
+        item.peserta?.asal_instansi ||
+        item.peserta?.institusi ||
+        "-";
+      const row =
+        grouped.get(name) || { institution: name, Hadir: 0, Telat: 0, Alpha: 0 };
+      const status = normalizeStatus(item.status);
 
-  const tableRows = filteredParticipants.map((item) => {
-    const total = item.present + item.late + item.absent;
+      if (status === "late") row.Telat += 1;
+      else if (status === "absent") row.Alpha += 1;
+      else row.Hadir += 1;
 
-    return {
-      ...item,
-      percentage: total ? (item.present / total) * 100 : 0,
-    };
-  });
+      grouped.set(name, row);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) =>
+      a.institution.localeCompare(b.institution)
+    );
+  }, [filteredAbsensi, pesertaMap]);
+
+  const dailyTrend = useMemo(() => {
+    const grouped = new Map<string, number>();
+
+    filteredAbsensi.forEach((item) => {
+      const date = getDateOnly(item.tanggal);
+      const current = grouped.get(date) || 0;
+      grouped.set(date, current + (normalizeStatus(item.status) === "absent" ? 0 : 1));
+    });
+
+    return Array.from(grouped.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, total]) => ({ date: formatChartDate(date), total }));
+  }, [filteredAbsensi]);
 
   const exportExcel = () => {
     downloadCsv("laporan-absensi.csv", [
-      ["Nama", "Institusi", "Hadir", "Telat", "Alpha", "Persentase"],
+      ["Nama", "NIM/NIS", "Institusi", "Hadir", "Telat", "Alpha", "Persentase"],
       ...tableRows.map((item) => [
         item.name,
+        item.number,
         item.institution,
         item.present,
         item.late,
@@ -179,7 +398,7 @@ export default function LaporanAbsensi() {
 
   return (
     <main className="attendance-page">
-      <header className="topbar">
+      <header className="laporan-topbar">
         <div className="topbar-inner">
           <button className="icon-button" aria-label="Kembali">
             <ArrowLeft size={28} />
@@ -187,7 +406,7 @@ export default function LaporanAbsensi() {
 
           <div>
             <h1>Laporan Absensi</h1>
-            <p>Analisis dan ekspor data</p>
+            <p>Analisis dan ekspor data absensi peserta</p>
           </div>
         </div>
       </header>
@@ -238,6 +457,9 @@ export default function LaporanAbsensi() {
               Export ke PDF
             </button>
           </div>
+
+          {loading && <p className="laporan-message">Memuat data laporan...</p>}
+          {errorMessage && <p className="laporan-message error">{errorMessage}</p>}
         </section>
 
         <section className="chart-grid">
@@ -315,7 +537,7 @@ export default function LaporanAbsensi() {
             >
               <CartesianGrid strokeDasharray="4 4" stroke="#dfe9e6" />
               <XAxis dataKey="date" tick={{ fill: COLORS.text }} />
-              <YAxis domain={[0, 40]} tick={{ fill: COLORS.text }} />
+              <YAxis tick={{ fill: COLORS.text }} />
               <Tooltip />
               <Legend />
               <Line
@@ -363,6 +585,7 @@ export default function LaporanAbsensi() {
               <thead>
                 <tr>
                   <th>Nama</th>
+                  <th>NIM/NIS</th>
                   <th>Institusi</th>
                   <th>Hadir</th>
                   <th>Telat</th>
@@ -373,8 +596,9 @@ export default function LaporanAbsensi() {
 
               <tbody>
                 {tableRows.map((item) => (
-                  <tr key={`${item.name}-${item.institution}`}>
+                  <tr key={item.id}>
                     <td>{item.name}</td>
+                    <td>{item.number}</td>
                     <td>{item.institution}</td>
                     <td>{item.present}</td>
                     <td>{item.late}</td>
@@ -386,6 +610,14 @@ export default function LaporanAbsensi() {
                     </td>
                   </tr>
                 ))}
+
+                {!loading && tableRows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: "center" }}>
+                      Belum ada data laporan.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

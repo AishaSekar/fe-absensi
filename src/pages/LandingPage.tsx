@@ -271,7 +271,7 @@ function LandingPage() {
               </div>
               <div className="contact-card-content">
                 <h4>Alamat</h4>
-                <p>Jl. Limau II No.2, Jakarta Selatan</p>
+                <p>Jl. Tanah Merdeka No.20, RT.11/RW.2,Rambutan, Kec.Ciracas,Kota Jakarta Timur, DKI Jakarta 13830</p>
               </div>
             </div>
             <div className="contact-card">

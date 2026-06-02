@@ -1,11 +1,12 @@
 import React from "react";
+import '../../css/RiwayatAbsensi.css';
 import {
   ArrowLeft,
   CalendarDays,
   Calendar,
   Filter,
 } from "lucide-react";
-import "./RiwayatAbsensi.css";
+
 
 const dataAbsensi = [
   { tanggal: "Sel, 19 Mei 2026", masuk: "08:15", pulang: "16:30", status: "Hadir" },

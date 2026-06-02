@@ -8,22 +8,46 @@ interface User {
   nama: string;
   email: string;
   role: string;
+  peserta?: Partial<PendaftaranForm>;
 }
 
 interface AbsensiRecord {
   id_absensi: number;
+  id_peserta?: number;
   tanggal: string;
   jam_masuk?: string;
   jam_pulang?: string;
   status: string;
   lokasi?: string;
+  keterangan?: string;
 }
 
 interface PendaftaranRecord {
   id_pendaftaran: number;
+  id_peserta?: number;
   status: string;
-  tanggal_daftar: string;
-  file_surat: string;
+  tanggal_daftar?: string;
+  created_at?: string;
+  file_surat?: string;
+  nim_nis?: string;
+  asal_instansi?: string;
+  jurusan?: string;
+  no_hp?: string;
+}
+
+interface PendaftaranForm {
+  nim_nis: string;
+  asal_instansi: string;
+  jurusan: string;
+  no_hp: string;
+}
+
+interface ActivityLog {
+  id_log: number;
+  aktivitas: string;
+  keterangan?: string;
+  created_at?: string;
+  tanggal?: string;
 }
 
 function UserDashboard() {
@@ -45,26 +69,98 @@ function UserDashboard() {
   const [pendaftaranList, setPendaftaranList] = useState<PendaftaranRecord[]>([]);
   const [loadingPendaftaran, setLoadingPendaftaran] = useState(false);
   const [fileSurat, setFileSurat] = useState<File | null>(null);
+  const [pendaftaranForm, setPendaftaranForm] = useState<PendaftaranForm>({
+    nim_nis: '',
+    asal_instansi: '',
+    jurusan: '',
+    no_hp: '',
+  });
   const [submittingPendaftaran, setSubmittingPendaftaran] = useState(false);
   const [pendaftaranMsg, setPendaftaranMsg] = useState({ type: '', text: '' });
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [loadingActivity, setLoadingActivity] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
-    if (stored) setUser(JSON.parse(stored));
+    if (stored) {
+      const parsedUser = JSON.parse(stored);
+      setUser(parsedUser);
+      setPendaftaranForm((current) => ({
+        nim_nis: parsedUser?.peserta?.nim_nis || parsedUser?.nim_nis || current.nim_nis,
+        asal_instansi: parsedUser?.peserta?.asal_instansi || parsedUser?.asal_instansi || current.asal_instansi,
+        jurusan: parsedUser?.peserta?.jurusan || parsedUser?.jurusan || current.jurusan,
+        no_hp: parsedUser?.peserta?.no_hp || parsedUser?.no_hp || current.no_hp,
+      }));
+    }
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
     if (activeMenu === 'riwayat' || activeMenu === 'dashboard') fetchAbsensiHistory();
-    if (activeMenu === 'pendaftaran') fetchPendaftaran();
+    if (activeMenu === 'pendaftaran' || activeMenu === 'dashboard') fetchPendaftaran();
+    if (activeMenu === 'aktivitas' || activeMenu === 'dashboard') fetchActivityLogs();
   }, [activeMenu]);
+
+  const unwrapList = (payload: any) => {
+    const data = payload?.data ?? payload;
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data?.riwayat)) return data.riwayat;
+    if (Array.isArray(data?.logs)) return data.logs;
+    if (data && typeof data === 'object') return [data];
+    return [];
+  };
+
+  const getDateValue = (value?: string) => {
+    if (!value) return 0;
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const normalizeStatus = (status?: string) => (status || 'pending').toString().toLowerCase();
+
+  const normalizeAbsensi = (item: any, index: number): AbsensiRecord => ({
+    id_absensi: item.id_absensi ?? item.id ?? index + 1,
+    id_peserta: item.id_peserta,
+    tanggal: item.tanggal_absensi || item.tanggal || item.created_at || item.date || '',
+    jam_masuk: item.jam_masuk || item.masuk || item.check_in,
+    jam_pulang: item.jam_pulang || item.pulang || item.check_out,
+    status: normalizeStatus(item.status_absensi || item.status || item.keterangan),
+    lokasi: item.lokasi || item.location || item.alamat,
+    keterangan: item.keterangan,
+  });
+
+  const normalizePendaftaran = (item: any, index: number): PendaftaranRecord => ({
+    id_pendaftaran: item.id_pendaftaran ?? item.id ?? item.id_peserta ?? index + 1,
+    id_peserta: item.id_peserta,
+    status: normalizeStatus(item.status_pendaftaran || item.status_pkl || item.status),
+    tanggal_daftar: item.tanggal_daftar || item.created_at || item.updated_at,
+    created_at: item.created_at,
+    file_surat: item.file_surat || item.surat_pengantar,
+    nim_nis: item.nim_nis,
+    asal_instansi: item.asal_instansi,
+    jurusan: item.jurusan,
+    no_hp: item.no_hp,
+  });
+
+  const normalizeActivity = (item: any, index: number): ActivityLog => ({
+    id_log: item.id_log ?? item.id_aktivitas ?? item.id ?? index + 1,
+    aktivitas: item.aktivitas || item.activity || item.action || item.judul || 'Aktivitas',
+    keterangan: item.keterangan || item.description || item.detail,
+    created_at: item.created_at || item.waktu || item.tanggal,
+    tanggal: item.tanggal,
+  });
 
   const fetchAbsensiHistory = async () => {
     setLoadingAbsensi(true);
     try {
       const res = await api.get('/absensi/history');
-      setAbsensiHistory(res.data.data || []);
+      const rows = unwrapList(res.data)
+        .map(normalizeAbsensi)
+        .sort((a, b) => getDateValue(b.tanggal || b.jam_masuk) - getDateValue(a.tanggal || a.jam_masuk));
+      setAbsensiHistory(rows);
     } catch { setAbsensiHistory([]); }
     finally { setLoadingAbsensi(false); }
   };
@@ -72,10 +168,59 @@ function UserDashboard() {
   const fetchPendaftaran = async () => {
     setLoadingPendaftaran(true);
     try {
-      const res = await api.get('/pendaftaran');
-      setPendaftaranList(res.data.data || []);
+      const endpoints = ['/pendaftaran/history', '/pendaftaran', '/peserta/me'];
+      let rows: PendaftaranRecord[] = [];
+
+      for (const endpoint of endpoints) {
+        try {
+          const res = await api.get(endpoint);
+          rows = unwrapList(res.data).map(normalizePendaftaran);
+          if (rows.length) break;
+        } catch (err: any) {
+          if ([401, 403].includes(err.response?.status)) throw err;
+        }
+      }
+
+      rows.sort((a, b) => getDateValue(b.tanggal_daftar || b.created_at) - getDateValue(a.tanggal_daftar || a.created_at));
+      setPendaftaranList(rows);
     } catch { setPendaftaranList([]); }
     finally { setLoadingPendaftaran(false); }
+  };
+
+  const fetchActivityLogs = async () => {
+    setLoadingActivity(true);
+    try {
+      const endpoints = ['/aktivitas', '/log-aktivitas', '/activity-log', '/logs/activity'];
+      let rows: ActivityLog[] = [];
+
+      for (const endpoint of endpoints) {
+        try {
+          const res = await api.get(endpoint);
+          rows = unwrapList(res.data).map(normalizeActivity);
+          if (rows.length) break;
+        } catch (err: any) {
+          if ([401, 403].includes(err.response?.status)) throw err;
+        }
+      }
+
+      rows.sort((a, b) => getDateValue(b.created_at || b.tanggal) - getDateValue(a.created_at || a.tanggal));
+      setActivityLogs(rows);
+    } catch { setActivityLogs([]); }
+    finally { setLoadingActivity(false); }
+  };
+
+  const recordActivity = async (aktivitas: string, keterangan?: string) => {
+    const payload = { aktivitas, keterangan, id_user: user?.id_user };
+    const endpoints = ['/aktivitas', '/log-aktivitas', '/activity-log'];
+
+    for (const endpoint of endpoints) {
+      try {
+        await api.post(endpoint, payload);
+        return;
+      } catch (err: any) {
+        if ([401, 403].includes(err.response?.status)) return;
+      }
+    }
   };
 
   const handleAbsenMasuk = async () => {
@@ -90,7 +235,9 @@ function UserDashboard() {
       await api.post('/absensi/masuk', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAbsenMsg({ type: 'success', text: 'Absensi masuk berhasil!' });
       setLokasi(''); setFoto(null);
+      recordActivity('Absensi masuk', `Lokasi: ${lokasi}`);
       fetchAbsensiHistory();
+      fetchActivityLogs();
     } catch (err: any) {
       setAbsenMsg({ type: 'error', text: err.response?.data?.message || 'Gagal absen masuk' });
     } finally { setSubmittingAbsen(false); }
@@ -104,23 +251,39 @@ function UserDashboard() {
       if (lokasi.trim()) fd.append('lokasi', lokasi);
       await api.post('/absensi/pulang', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAbsenMsg({ type: 'success', text: 'Absensi pulang berhasil!' });
+      recordActivity('Absensi pulang', lokasi.trim() ? `Lokasi: ${lokasi}` : undefined);
       fetchAbsensiHistory();
+      fetchActivityLogs();
     } catch (err: any) {
       setAbsenMsg({ type: 'error', text: err.response?.data?.message || 'Gagal absen pulang' });
     } finally { setSubmittingAbsen(false); }
   };
 
   const handlePendaftaran = async () => {
+    if (!pendaftaranForm.nim_nis.trim()) { setPendaftaranMsg({ type: 'error', text: 'NIM/NIS wajib diisi' }); return; }
+    if (!pendaftaranForm.asal_instansi.trim()) { setPendaftaranMsg({ type: 'error', text: 'Asal instansi wajib diisi' }); return; }
+    if (!pendaftaranForm.jurusan.trim()) { setPendaftaranMsg({ type: 'error', text: 'Jurusan wajib diisi' }); return; }
+    if (!pendaftaranForm.no_hp.trim()) { setPendaftaranMsg({ type: 'error', text: 'No HP wajib diisi' }); return; }
     if (!fileSurat) { setPendaftaranMsg({ type: 'error', text: 'File surat wajib diupload (PDF)' }); return; }
     setSubmittingPendaftaran(true);
     setPendaftaranMsg({ type: '', text: '' });
     try {
       const fd = new FormData();
+      if (user?.id_user) fd.append('id_user', String(user.id_user));
+      fd.append('nama', user?.nama || '');
+      fd.append('email', user?.email || '');
+      fd.append('nim_nis', pendaftaranForm.nim_nis);
+      fd.append('asal_instansi', pendaftaranForm.asal_instansi);
+      fd.append('jurusan', pendaftaranForm.jurusan);
+      fd.append('no_hp', pendaftaranForm.no_hp);
+      fd.append('status_pkl', 'pending');
       fd.append('file_surat', fileSurat);
       await api.post('/pendaftaran', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setPendaftaranMsg({ type: 'success', text: 'Pendaftaran berhasil dikirim!' });
       setFileSurat(null);
+      recordActivity('Mengirim pendaftaran PKL', `${pendaftaranForm.nim_nis} - ${pendaftaranForm.asal_instansi}`);
       fetchPendaftaran();
+      fetchActivityLogs();
     } catch (err: any) {
       setPendaftaranMsg({ type: 'error', text: err.response?.data?.message || 'Gagal mengirim pendaftaran' });
     } finally { setSubmittingPendaftaran(false); }
@@ -134,14 +297,26 @@ function UserDashboard() {
 
   const formatDate = (d: Date) => d.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const formatTime = (d: Date) => d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const formatDateStr = (s: string) => { try { return new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
-  const formatTimeStr = (s?: string) => { if (!s) return '-'; try { const d = new Date(s); return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }); } catch { return s; } };
+  const formatDateStr = (s?: string) => {
+    if (!s) return '-';
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+  const formatTimeStr = (s?: string) => {
+    if (!s) return '-';
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? s : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  };
+  const updatePendaftaranField = (field: keyof PendaftaranForm, value: string) => {
+    setPendaftaranForm((current) => ({ ...current, [field]: value }));
+  };
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
     { id: 'absensi', label: 'Absensi', icon: 'clock' },
     { id: 'riwayat', label: 'Riwayat', icon: 'list' },
     { id: 'pendaftaran', label: 'Pendaftaran', icon: 'file' },
+    { id: 'aktivitas', label: 'Aktivitas', icon: 'activity' },
     { id: 'profil', label: 'Profil', icon: 'user' },
   ];
 
@@ -151,6 +326,7 @@ function UserDashboard() {
       clock: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
       list: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
       file: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
+      activity: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
       user: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
     };
     return icons[icon] || null;
@@ -165,6 +341,7 @@ function UserDashboard() {
     const item = menuItems.find(m => m.id === activeMenu);
     if (activeMenu === 'riwayat') return 'Riwayat Absensi';
     if (activeMenu === 'pendaftaran') return 'Pendaftaran PKL';
+    if (activeMenu === 'aktivitas') return 'Log Aktivitas';
     if (activeMenu === 'profil') return 'Profil Saya';
     return item?.label || 'Dashboard';
   };
@@ -178,7 +355,7 @@ function UserDashboard() {
             <div className="sidebar-brand-icon">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5"/></svg>
             </div>
-            {sidebarOpen && <div className="sidebar-brand-text"><span className="sidebar-brand-name">BPTI</span><span className="sidebar-brand-sub">Absensi PKL</span></div>}
+            {sidebarOpen && <div className="sidebar-brand-text"><span className="sidebar-brand-name">BPTI UHAMKA</span><span className="sidebar-brand-sub">Absensi PKL</span></div>}
           </div>
         </div>
         <nav className="sidebar-nav">
@@ -268,15 +445,16 @@ function UserDashboard() {
                   <table className="dash-table">
                     <thead><tr><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Status</th></tr></thead>
                     <tbody>
-                      {absensiHistory.slice(0, 5).map((row) => (
+                      {loadingAbsensi && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</td></tr>}
+                      {!loadingAbsensi && absensiHistory.slice(0, 5).map((row) => (
                         <tr key={row.id_absensi}>
                           <td>{formatDateStr(row.tanggal)}</td>
                           <td>{formatTimeStr(row.jam_masuk)}</td>
                           <td>{formatTimeStr(row.jam_pulang)}</td>
-                          <td><span className={`status-badge status-${row.status.replace(' ', '-')}`}>{row.status}</span></td>
+                          <td><span className={`status-badge status-${row.status.replace(/\s+/g, '-')}`}>{row.status}</span></td>
                         </tr>
                       ))}
-                      {absensiHistory.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada riwayat absensi</td></tr>}
+                      {!loadingAbsensi && absensiHistory.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada riwayat absensi</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -334,7 +512,7 @@ function UserDashboard() {
                             <td>{formatDateStr(row.tanggal)}</td>
                             <td>{formatTimeStr(row.jam_masuk)}</td>
                             <td>{formatTimeStr(row.jam_pulang)}</td>
-                            <td><span className={`status-badge status-${row.status.replace(' ', '-')}`}>{row.status}</span></td>
+                            <td><span className={`status-badge status-${row.status.replace(/\s+/g, '-')}`}>{row.status}</span></td>
                             <td>{row.lokasi || '-'}</td>
                           </tr>
                         ))}
@@ -357,10 +535,34 @@ function UserDashboard() {
                     <span>{pendaftaranMsg.text}</span>
                   </div>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px' }}>
+                <div className="registration-form-grid">
                   <div className="form-group">
-                    <label className="form-label">Upload Surat Pengantar (PDF)</label>
-                    <input type="file" accept=".pdf" onChange={e => setFileSurat(e.target.files?.[0] || null)} style={{ fontSize: '0.88rem' }} />
+                    <label className="form-label">Nama</label>
+                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={user?.nama || ''} disabled />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Email</label>
+                    <input type="email" className="form-input" style={{ paddingLeft: '1rem' }} value={user?.email || ''} disabled />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">NIM / NIS</label>
+                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.nim_nis} onChange={e => updatePendaftaranField('nim_nis', e.target.value)} placeholder="Masukkan NIM/NIS" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">No HP</label>
+                    <input type="tel" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.no_hp} onChange={e => updatePendaftaranField('no_hp', e.target.value)} placeholder="08123456789" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Asal Sekolah / Kampus</label>
+                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.asal_instansi} onChange={e => updatePendaftaranField('asal_instansi', e.target.value)} placeholder="UHAMKA / SMK ..." />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Jurusan</label>
+                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.jurusan} onChange={e => updatePendaftaranField('jurusan', e.target.value)} placeholder="Teknik Informatika" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Upload Surat Pengantar</label>
+                    <input type="file" accept=".pdf,.doc,.docx" onChange={e => setFileSurat(e.target.files?.[0] || null)} style={{ fontSize: '0.88rem' }} />
                   </div>
                   <button className="auth-submit-btn" style={{ maxWidth: '250px' }} onClick={handlePendaftaran} disabled={submittingPendaftaran}>
                     {submittingPendaftaran ? 'Mengirim...' : 'Kirim Pendaftaran'}
@@ -375,20 +577,51 @@ function UserDashboard() {
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Tanggal Daftar</th><th>Status</th></tr></thead>
+                      <thead><tr><th>No</th><th>Tanggal Daftar</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>Status</th></tr></thead>
                       <tbody>
                         {pendaftaranList.map((p, i) => (
                           <tr key={p.id_pendaftaran}>
                             <td>{i + 1}</td>
                             <td>{formatDateStr(p.tanggal_daftar)}</td>
+                            <td>{p.nim_nis || '-'}</td>
+                            <td>{p.asal_instansi || '-'}</td>
+                            <td>{p.jurusan || '-'}</td>
                             <td><span className={`status-badge status-${p.status}`}>{p.status}</span></td>
                           </tr>
                         ))}
-                        {pendaftaranList.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada pendaftaran</td></tr>}
+                        {pendaftaranList.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada pendaftaran</td></tr>}
                       </tbody>
                     </table>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======= AKTIVITAS ======= */}
+          {activeMenu === 'aktivitas' && (
+            <div className="dashboard-home">
+              <div className="dash-table-card">
+                <div className="dash-table-header"><h3>Log Aktivitas</h3></div>
+                {loadingActivity ? (
+                  <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat aktivitas...</div>
+                ) : (
+                  <div className="activity-list">
+                    {activityLogs.map((log) => (
+                      <div className="activity-item" key={log.id_log}>
+                        <div className="activity-dot"></div>
+                        <div className="activity-content">
+                          <strong>{log.aktivitas}</strong>
+                          {log.keterangan && <span>{log.keterangan}</span>}
+                          <small>{formatDateStr(log.created_at || log.tanggal)} {formatTimeStr(log.created_at || log.tanggal)}</small>
+                        </div>
+                      </div>
+                    ))}
+                    {activityLogs.length === 0 && (
+                      <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Belum ada log aktivitas</div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
