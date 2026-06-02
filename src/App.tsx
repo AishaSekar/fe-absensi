@@ -10,11 +10,11 @@ interface User {
   role: 'admin' | 'peserta';
 }
 
-// Inner component that has access to useNavigate (must be inside <Router>)
+
 function AppRoutes() {
   const navigate = useNavigate();
 
-  // Listen for 401 unauthorized events from the API interceptor
+  
   useEffect(() => {
     const handleUnauthorized = () => {
       navigate('/login', { replace: true });

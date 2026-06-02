@@ -9,7 +9,7 @@ const api = axios.create({
   },
 });
 
-// Add token to requests automatically
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -18,10 +18,10 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Track redirect state to prevent duplicate redirects
+
 let isRedirectingToLogin = false;
 
-// Handle 401 responses — redirect to login without full page refresh
+
 api.interceptors.response.use(
   (response) => {
     isRedirectingToLogin = false;
@@ -31,10 +31,6 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       const currentPath = window.location.pathname;
 
-      // Skip redirect if:
-      // 1. Already on an auth or public page
-      // 2. The failing request was the login endpoint itself (wrong password etc.)
-      // 3. A redirect is already queued
       const isPublicPage =
         currentPath === '/login' ||
         currentPath === '/register' ||
