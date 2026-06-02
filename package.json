@@ -9,12 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "apexcharts": "^5.13.0",
     "axios": "^1.16.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",
+    "react-apexcharts": "^2.1.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.15.1",
-    "recharts": "^3.8.1"
+    "recharts": "^3.8.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.4",

@@ -1,26 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft,
   CalendarDays,
   ChevronDown,
   FileSpreadsheet,
   FileText,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import api from "../../config/api";
 import "../../css/LaporanAbsensi.css";
 
@@ -66,18 +53,9 @@ type ReportRow = {
   percentage: number;
 };
 
-const COLORS = {
-  present: "#207a66",
-  late: "#2ca58d",
-  absent: "#6fcf97",
-  text: "#00645f",
-};
-
 function formatDate(value: string) {
   if (!value) return "-";
-
   const date = new Date(value);
-
   return date.toLocaleDateString("id-ID", {
     day: "numeric",
     month: "numeric",
@@ -85,13 +63,15 @@ function formatDate(value: string) {
   });
 }
 
-function formatChartDate(value: string) {
-  const date = new Date(value);
-
-  return date.toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "2-digit",
-  });
+function formatTimeStr(value?: string) {
+  if (!value) return "-";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return value;
+  }
 }
 
 function getDateOnly(value: string) {
@@ -101,29 +81,12 @@ function getDateOnly(value: string) {
 
 function normalizeStatus(value: string) {
   const status = value.toLowerCase();
-
   if (status.includes("telat")) return "late";
   if (status.includes("alpha") || status.includes("tidak")) return "absent";
   return "present";
 }
 
-function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
-  const csv = rows
-    .map((row) =>
-      row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")
-    )
-    .join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = filename;
-  link.click();
-
-  URL.revokeObjectURL(url);
-}
+// Function removed, using xlsx instead
 
 function DateField({
   label,
@@ -137,7 +100,6 @@ function DateField({
   return (
     <label className="field">
       <span>{label}</span>
-
       <div className="date-control">
         <input type="date" value={value} onChange={onChange} />
         <CalendarDays size={18} aria-hidden="true" />
@@ -181,13 +143,19 @@ export default function LaporanAbsensi() {
       setErrorMessage("");
 
       try {
+        // Fetch peserta and all absensi (admin gets all records)
+        // Pass date range to backend for efficient filtering
         const [pesertaRes, absensiRes] = await Promise.all([
           api.get("/peserta"),
-          api.get("/absensi/history"),
+          api.get("/absensi/history", { params: { from: startDate, to: endDate } }),
         ]);
 
-        setPesertaList(pesertaRes.data.data || pesertaRes.data || []);
-        setAbsensiList(absensiRes.data.data || absensiRes.data || []);
+        // Unwrap nested data structure
+        const pesertaData = pesertaRes.data?.data ?? pesertaRes.data ?? [];
+        const absensiData = absensiRes.data?.data ?? absensiRes.data ?? [];
+
+        setPesertaList(Array.isArray(pesertaData) ? pesertaData : []);
+        setAbsensiList(Array.isArray(absensiData) ? absensiData : []);
       } catch (error: any) {
         setPesertaList([]);
         setAbsensiList([]);
@@ -200,7 +168,7 @@ export default function LaporanAbsensi() {
     };
 
     fetchReportData();
-  }, []);
+  }, [startDate, endDate]);
 
   const pesertaMap = useMemo(() => {
     return new Map(pesertaList.map((item) => [item.id_peserta, item]));
@@ -301,7 +269,6 @@ export default function LaporanAbsensi() {
     return Array.from(rows.values())
       .map((row) => {
         const total = row.present + row.late + row.absent;
-
         return {
           ...row,
           percentage: total ? (row.present / total) * 100 : 0,
@@ -331,87 +298,91 @@ export default function LaporanAbsensi() {
     };
   }, [tableRows]);
 
-  const statusData = [
-    { name: "Hadir", value: totals.present, color: COLORS.present },
-    { name: "Telat", value: totals.late, color: COLORS.late },
-    { name: "Alpha", value: totals.absent, color: COLORS.absent },
-  ];
-
-  const institutionData = useMemo(() => {
-    const grouped = new Map<
-      string,
-      { institution: string; Hadir: number; Telat: number; Alpha: number }
-    >();
-
-    filteredAbsensi.forEach((item) => {
-      const peserta = pesertaMap.get(item.id_peserta);
-      const name =
-        peserta?.asal_instansi ||
-        peserta?.institusi ||
-        item.peserta?.asal_instansi ||
-        item.peserta?.institusi ||
-        "-";
-      const row =
-        grouped.get(name) || { institution: name, Hadir: 0, Telat: 0, Alpha: 0 };
-      const status = normalizeStatus(item.status);
-
-      if (status === "late") row.Telat += 1;
-      else if (status === "absent") row.Alpha += 1;
-      else row.Hadir += 1;
-
-      grouped.set(name, row);
-    });
-
-    return Array.from(grouped.values()).sort((a, b) =>
-      a.institution.localeCompare(b.institution)
-    );
-  }, [filteredAbsensi, pesertaMap]);
-
-  const dailyTrend = useMemo(() => {
-    const grouped = new Map<string, number>();
-
-    filteredAbsensi.forEach((item) => {
-      const date = getDateOnly(item.tanggal);
-      const current = grouped.get(date) || 0;
-      grouped.set(date, current + (normalizeStatus(item.status) === "absent" ? 0 : 1));
-    });
-
-    return Array.from(grouped.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({ date: formatChartDate(date), total }));
-  }, [filteredAbsensi]);
-
   const exportExcel = () => {
-    downloadCsv("laporan-absensi.csv", [
-      ["Nama", "NIM/NIS", "Institusi", "Hadir", "Telat", "Alpha", "Persentase"],
-      ...tableRows.map((item) => [
-        item.name,
-        item.number,
-        item.institution,
-        item.present,
-        item.late,
-        item.absent,
-        `${item.percentage.toFixed(1)}%`,
-      ]),
-    ]);
+    const data = tableRows.map((item, i) => ({
+      No: i + 1,
+      Nama: item.name,
+      "NIM/NIS": item.number,
+      Institusi: item.institution,
+      Hadir: item.present,
+      Telat: item.late,
+      Alpha: item.absent,
+      Persentase: `${item.percentage.toFixed(1)}%`,
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Absensi");
+    XLSX.writeFile(workbook, "Laporan_Absensi.xlsx");
   };
+
+  const exportPdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("Laporan Kehadiran PKL", 14, 20);
+    
+    doc.setFontSize(11);
+    doc.text(`Periode: ${formatDate(startDate)} - ${formatDate(endDate)}`, 14, 28);
+    doc.text(`Institusi: ${institution}`, 14, 34);
+
+    const tableData = tableRows.map((item, i) => [
+      i + 1,
+      item.name,
+      item.number,
+      item.institution,
+      item.present,
+      item.late,
+      item.absent,
+      `${item.percentage.toFixed(1)}%`,
+    ]);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["No", "Nama", "NIM/NIS", "Institusi", "Hadir", "Telat", "Alpha", "%"]],
+      body: tableData,
+      theme: "grid",
+      styles: {
+        fontSize: 9,
+        cellPadding: 3,
+      },
+      headStyles: {
+        fillColor: [26, 92, 56],
+        textColor: 255,
+        halign: "center",
+      },
+      columnStyles: {
+        0: { halign: "center", cellWidth: 10 },
+        4: { halign: "center", cellWidth: 15 },
+        5: { halign: "center", cellWidth: 15 },
+        6: { halign: "center", cellWidth: 15 },
+        7: { halign: "center", cellWidth: 15 },
+      },
+    });
+
+    doc.save("Laporan_Absensi.pdf");
+  };
+
+  // Detail absensi flat list for the detail table (filtered)
+  const detailAbsensi = useMemo(() => {
+    return filteredAbsensi.map((item) => {
+      const peserta = pesertaMap.get(item.id_peserta);
+      return {
+        ...item,
+        namaLengkap: item.peserta?.user?.nama || peserta?.user?.nama || "-",
+        nimNis: item.peserta?.nim_nis || peserta?.nim_nis || "-",
+        institusi:
+          item.peserta?.asal_instansi ||
+          item.peserta?.institusi ||
+          peserta?.asal_instansi ||
+          peserta?.institusi ||
+          "-",
+      };
+    }).sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+  }, [filteredAbsensi, pesertaMap]);
 
   return (
     <main className="attendance-page">
-      <header className="laporan-topbar">
-        <div className="topbar-inner">
-          <button className="icon-button" aria-label="Kembali">
-            <ArrowLeft size={28} />
-          </button>
-
-          <div>
-            <h1>Laporan Absensi</h1>
-            <p>Analisis dan ekspor data absensi peserta</p>
-          </div>
-        </div>
-      </header>
-
       <div className="page-content">
+        {/* Filter Panel */}
         <section className="panel filter-panel">
           <h2>Filter Laporan</h2>
 
@@ -430,7 +401,6 @@ export default function LaporanAbsensi() {
 
             <label className="field">
               <span>Institusi</span>
-
               <div className="select-control">
                 <select
                   value={institution}
@@ -440,188 +410,161 @@ export default function LaporanAbsensi() {
                     <option key={item}>{item}</option>
                   ))}
                 </select>
-
                 <ChevronDown size={20} aria-hidden="true" />
               </div>
             </label>
           </div>
 
           <div className="action-row">
-            <button className="export-button excel" onClick={exportExcel}>
+            <button className="export-button excel" onClick={exportExcel} disabled={loading}>
               <FileSpreadsheet size={22} />
               Export ke Excel
             </button>
 
-            <button className="export-button pdf" onClick={() => window.print()}>
+            <button className="export-button pdf" onClick={exportPdf} disabled={loading}>
               <FileText size={22} />
               Export ke PDF
             </button>
           </div>
 
           {loading && <p className="laporan-message">Memuat data laporan...</p>}
-          {errorMessage && <p className="laporan-message error">{errorMessage}</p>}
+          {!loading && errorMessage && <p className="laporan-message error">{errorMessage}</p>}
         </section>
 
-        <section className="chart-grid">
-          <article className="panel chart-card">
-            <h2>Distribusi Status Kehadiran</h2>
-
-            <div className="pie-layout">
-              <ResponsiveContainer width="100%" height={310}>
-                <PieChart>
-                  <Pie
-                    data={statusData}
-                    cx="50%"
-                    cy="50%"
-                    dataKey="value"
-                    nameKey="name"
-                    outerRadius={125}
-                    label={({ name, percent }) =>
-                      `${name} ${(percent * 100).toFixed(0)}%`
-                    }
-                    labelLine={false}
-                    stroke="#ffffff"
-                  >
-                    {statusData.map((item) => (
-                      <Cell key={item.name} fill={item.color} />
-                    ))}
-                  </Pie>
-
-                  <Tooltip formatter={(value) => `${value} hari`} />
-                </PieChart>
-              </ResponsiveContainer>
-
-              <div className="status-list">
-                {statusData.map((item) => (
-                  <div className="status-row" key={item.name}>
-                    <span>
-                      <i style={{ backgroundColor: item.color }} />
-                      {item.name}
-                    </span>
-
-                    <strong>{item.value} hari</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </article>
-
-          <article className="panel chart-card">
-            <h2>Kehadiran per Institusi</h2>
-
-            <ResponsiveContainer width="100%" height={390}>
-              <BarChart
-                data={institutionData}
-                margin={{ top: 18, right: 12, left: 0, bottom: 18 }}
-              >
-                <CartesianGrid strokeDasharray="4 4" stroke="#dfe9e6" />
-                <XAxis dataKey="institution" tick={{ fill: COLORS.text }} />
-                <YAxis tick={{ fill: COLORS.text }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="Hadir" fill={COLORS.present} />
-                <Bar dataKey="Telat" fill={COLORS.late} />
-                <Bar dataKey="Alpha" fill={COLORS.absent} />
-              </BarChart>
-            </ResponsiveContainer>
-          </article>
-        </section>
-
-        <section className="panel chart-card wide">
-          <h2>Tren Kehadiran Harian</h2>
-
-          <ResponsiveContainer width="100%" height={360}>
-            <LineChart
-              data={dailyTrend}
-              margin={{ top: 18, right: 16, left: 0, bottom: 18 }}
-            >
-              <CartesianGrid strokeDasharray="4 4" stroke="#dfe9e6" />
-              <XAxis dataKey="date" tick={{ fill: COLORS.text }} />
-              <YAxis tick={{ fill: COLORS.text }} />
-              <Tooltip />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="total"
-                name="Total Hadir"
-                stroke={COLORS.present}
-                strokeWidth={4}
-                dot={{ r: 4, strokeWidth: 3, fill: "#ffffff" }}
+        {/* Summary Stats */}
+        {!loading && !errorMessage && (
+          <section className="panel summary-panel">
+            <h2>Ringkasan Laporan</h2>
+            <div className="summary-grid">
+              <StatCard label="Total Peserta Aktif" value={totals.active} />
+              <StatCard
+                label="Total Hadir"
+                value={totals.present}
+                variant="success"
               />
-            </LineChart>
-          </ResponsiveContainer>
-        </section>
+              <StatCard
+                label="Total Telat"
+                value={totals.late}
+                variant="soft"
+              />
+              <StatCard
+                label="Total Alpha"
+                value={totals.absent}
+                variant="soft"
+              />
+              <StatCard
+                label="Persentase Kehadiran"
+                value={`${totals.percentage.toFixed(1)}%`}
+              />
+              <StatCard
+                label="Periode"
+                value={`${formatDate(startDate)} – ${formatDate(endDate)}`}
+                variant="neutral"
+              />
+            </div>
+          </section>
+        )}
 
-        <section className="panel summary-panel">
-          <h2>Ringkasan Laporan</h2>
-
-          <div className="summary-grid">
-            <StatCard label="Total Peserta Aktif" value={totals.active} />
-
-            <StatCard
-              label="Total Kehadiran"
-              value={totals.present}
-              variant="success"
-            />
-
-            <StatCard
-              label="Persentase Kehadiran"
-              value={`${totals.percentage.toFixed(1)}%`}
-            />
-
-            <StatCard
-              label="Periode"
-              value={`${formatDate(startDate)} - ${formatDate(endDate)}`}
-              variant="neutral"
-            />
-          </div>
-        </section>
-
-        <section className="panel table-panel">
-          <h2>Detail Kehadiran per Peserta</h2>
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nama</th>
-                  <th>NIM/NIS</th>
-                  <th>Institusi</th>
-                  <th>Hadir</th>
-                  <th>Telat</th>
-                  <th>Alpha</th>
-                  <th>Persentase</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {tableRows.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{item.number}</td>
-                    <td>{item.institution}</td>
-                    <td>{item.present}</td>
-                    <td>{item.late}</td>
-                    <td>{item.absent}</td>
-                    <td>
-                      <span className="percentage-pill">
-                        {item.percentage.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-
-                {!loading && tableRows.length === 0 && (
+        {/* Rekap per Peserta */}
+        {!loading && !errorMessage && (
+          <section className="panel table-panel">
+            <h2>Rekap Kehadiran per Peserta</h2>
+            <div className="table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center" }}>
-                      Belum ada data laporan.
-                    </td>
+                    <th>No</th>
+                    <th>Nama</th>
+                    <th>NIM/NIS</th>
+                    <th>Institusi</th>
+                    <th>Hadir</th>
+                    <th>Telat</th>
+                    <th>Alpha</th>
+                    <th>Persentase</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </thead>
+                <tbody>
+                  {tableRows.map((item, i) => (
+                    <tr key={item.id}>
+                      <td>{i + 1}</td>
+                      <td>{item.name}</td>
+                      <td>{item.number}</td>
+                      <td>{item.institution}</td>
+                      <td>{item.present}</td>
+                      <td>{item.late}</td>
+                      <td>{item.absent}</td>
+                      <td>
+                        <span className="percentage-pill">
+                          {item.percentage.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {!loading && tableRows.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: "center" }}>
+                        Belum ada data laporan untuk periode ini.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* Detail Absensi */}
+        {!loading && !errorMessage && (
+          <section className="panel table-panel">
+            <h2>Detail Log Absensi</h2>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>No</th>
+                    <th>Nama</th>
+                    <th>NIM/NIS</th>
+                    <th>Institusi</th>
+                    <th>Tanggal</th>
+                    <th>Jam Masuk</th>
+                    <th>Jam Pulang</th>
+                    <th>Status</th>
+                    <th>Lokasi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailAbsensi.map((item, i) => (
+                    <tr key={item.id_absensi}>
+                      <td>{i + 1}</td>
+                      <td>{item.namaLengkap}</td>
+                      <td>{item.nimNis}</td>
+                      <td>{item.institusi}</td>
+                      <td>{formatDate(item.tanggal)}</td>
+                      <td>{formatTimeStr(item.jam_masuk)}</td>
+                      <td>{formatTimeStr(item.jam_pulang)}</td>
+                      <td>
+                        <span
+                          className={`status-badge-laporan status-${item.status.replace(/\s+/g, "-")}`}
+                        >
+                          {item.status}
+                        </span>
+                      </td>
+                      <td>{item.lokasi || "-"}</td>
+                    </tr>
+                  ))}
+                  {!loading && detailAbsensi.length === 0 && (
+                    <tr>
+                      <td colSpan={9} style={{ textAlign: "center" }}>
+                        Tidak ada data absensi pada periode ini.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

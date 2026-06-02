@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Chart from 'react-apexcharts';
 import api from '../../config/api';
 import '../../css/Dashboard.css';
 import LaporanAbsensi from './Laporan';
@@ -67,7 +68,7 @@ function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (activeMenu === 'dashboard') { fetchStats(); fetchPeserta(); }
+    if (activeMenu === 'dashboard') { fetchStats(); fetchPeserta(); fetchAbsensi(); }
     if (activeMenu === 'peserta') fetchPeserta();
     if (activeMenu === 'pendaftaran') fetchPeserta();
     if (activeMenu === 'absensi') fetchAbsensi();
@@ -312,6 +313,42 @@ function AdminDashboard() {
                     <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#ef4444' }}>{pendingPeserta.length}</div>
                     <div style={{ fontSize: '0.85rem' }}>Menunggu keputusan admin</div>
                   </div>
+                </div>
+              </div>
+
+              {/* Grafik ApexCharts */}
+              <div className="dash-table-card" style={{ marginTop: '30px' }}>
+                <div className="dash-table-header">
+                  <h3>Statistik Kehadiran Keseluruhan</h3>
+                </div>
+                <div style={{ padding: '20px' }}>
+                  {loadingAbsensi ? (
+                    <div style={{ textAlign: 'center', color: '#8a8a9e', padding: '2rem' }}>Memuat grafik...</div>
+                  ) : (
+                    <Chart
+                      options={{
+                        chart: { type: 'bar', toolbar: { show: false } },
+                        colors: ['#10b981', '#f59e0b', '#ef4444'],
+                        plotOptions: { bar: { columnWidth: '45%', borderRadius: 4, distributed: true } },
+                        dataLabels: { enabled: true },
+                        legend: { show: false },
+                        xaxis: {
+                          categories: ['Hadir', 'Telat', 'Tidak Hadir'],
+                          labels: { style: { colors: ['#10b981', '#f59e0b', '#ef4444'], fontSize: '14px', fontWeight: 600 } }
+                        },
+                      }}
+                      series={[{
+                        name: 'Total',
+                        data: [
+                          absensiList.filter(a => a.status.toLowerCase().includes('hadir') && !a.status.toLowerCase().includes('tidak')).length,
+                          absensiList.filter(a => a.status.toLowerCase().includes('telat')).length,
+                          absensiList.filter(a => a.status.toLowerCase().includes('tidak hadir') || a.status.toLowerCase().includes('alpha')).length
+                        ]
+                      }]}
+                      type="bar"
+                      height={350}
+                    />
+                  )}
                 </div>
               </div>
             </div>

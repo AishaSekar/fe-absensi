@@ -104,12 +104,6 @@ function UserDashboard() {
     if (stored) {
       const parsedUser = JSON.parse(stored);
       setUser(parsedUser);
-      setPendaftaranForm((current) => ({
-        nim_nis: parsedUser?.peserta?.nim_nis || parsedUser?.nim_nis || current.nim_nis,
-        asal_instansi: parsedUser?.peserta?.asal_instansi || parsedUser?.asal_instansi || current.asal_instansi,
-        jurusan: parsedUser?.peserta?.jurusan || parsedUser?.jurusan || current.jurusan,
-        no_hp: parsedUser?.peserta?.no_hp || parsedUser?.no_hp || current.no_hp,
-      }));
     }
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -125,7 +119,6 @@ function UserDashboard() {
 
   useEffect(() => {
     if (activeMenu === 'riwayat' || activeMenu === 'dashboard') fetchAbsensiHistory();
-    if (activeMenu === 'pendaftaran' || activeMenu === 'dashboard') fetchPendaftaran();
     if (activeMenu === 'aktivitas' || activeMenu === 'dashboard') fetchActivityLogs();
   }, [activeMenu]);
 
@@ -180,14 +173,16 @@ function UserDashboard() {
         .map(normalizeAbsensi)
         .sort((a, b) => getDateValue(b.tanggal || b.jam_masuk) - getDateValue(a.tanggal || a.jam_masuk));
       setAbsensiHistory(rows);
-    } catch { setAbsensiHistory([]); }
-    finally { setLoadingAbsensi(false); }
+    } catch {
+      setAbsensiHistory([]);
+    } finally {
+      setLoadingAbsensi(false);
+    }
   };
 
   const fetchPendaftaran = async () => {
     setLoadingPendaftaran(true);
     try {
-      // Correct endpoint is /pendaftaran (backend filters by user role automatically)
       const res = await api.get('/pendaftaran');
       const rows = unwrapList(res.data).map(normalizePendaftaran);
       rows.sort((a, b) => getDateValue(b.tanggal_daftar || b.created_at) - getDateValue(a.tanggal_daftar || a.created_at));
@@ -199,8 +194,8 @@ function UserDashboard() {
     }
   };
 
-  // Activity logs stored locally in sessionStorage (no backend endpoint)
-  const fetchActivityLogs = async () => {
+  // Activity logs are stored locally in sessionStorage
+  const fetchActivityLogs = () => {
     setLoadingActivity(true);
     setActivityLogs(loadLocalActivityLogs());
     setLoadingActivity(false);
@@ -215,6 +210,15 @@ function UserDashboard() {
     };
     saveLocalActivityLog(log);
     setActivityLogs(loadLocalActivityLogs());
+  };
+
+  const getAbsensiErrorMsg = (err: any): string => {
+    const status = err.response?.status;
+    const msg = err.response?.data?.message || '';
+    if (status === 404 || msg.toLowerCase().includes('peserta tidak ditemukan')) {
+      return 'Data peserta belum terdaftar. Silakan lengkapi data pendaftaran PKL terlebih dahulu melalui menu Pendaftaran.';
+    }
+    return msg || 'Terjadi kesalahan. Silakan coba lagi.';
   };
 
   const handleAbsenMasuk = async () => {
@@ -232,7 +236,7 @@ function UserDashboard() {
       recordActivity('Absensi masuk', `Lokasi: ${lokasi}`);
       fetchAbsensiHistory();
     } catch (err: any) {
-      setAbsenMsg({ type: 'error', text: err.response?.data?.message || 'Gagal absen masuk' });
+      setAbsenMsg({ type: 'error', text: getAbsensiErrorMsg(err) });
     } finally { setSubmittingAbsen(false); }
   };
 
@@ -247,7 +251,7 @@ function UserDashboard() {
       recordActivity('Absensi pulang', lokasi.trim() ? `Lokasi: ${lokasi}` : undefined);
       fetchAbsensiHistory();
     } catch (err: any) {
-      setAbsenMsg({ type: 'error', text: err.response?.data?.message || 'Gagal absen pulang' });
+      setAbsenMsg({ type: 'error', text: getAbsensiErrorMsg(err) });
     } finally { setSubmittingAbsen(false); }
   };
 
@@ -320,7 +324,6 @@ function UserDashboard() {
     { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
     { id: 'absensi', label: 'Absensi', icon: 'clock' },
     { id: 'riwayat', label: 'Riwayat', icon: 'list' },
-    { id: 'pendaftaran', label: 'Pendaftaran', icon: 'file' },
     { id: 'aktivitas', label: 'Aktivitas', icon: 'activity' },
     { id: 'profil', label: 'Profil', icon: 'user' },
   ];
@@ -345,7 +348,6 @@ function UserDashboard() {
   const getMenuTitle = () => {
     const item = menuItems.find(m => m.id === activeMenu);
     if (activeMenu === 'riwayat') return 'Riwayat Absensi';
-    if (activeMenu === 'pendaftaran') return 'Pendaftaran PKL';
     if (activeMenu === 'aktivitas') return 'Log Aktivitas';
     if (activeMenu === 'profil') return 'Profil Saya';
     return item?.label || 'Dashboard';
@@ -535,78 +537,7 @@ function UserDashboard() {
             </div>
           )}
 
-          {/* ======= PENDAFTARAN ======= */}
-          {activeMenu === 'pendaftaran' && (
-            <div className="dashboard-home">
-              <div className="dash-table-card" style={{ padding: '2rem' }}>
-                <h3 style={{ marginBottom: '1.5rem', color: '#0f3d24', fontSize: '1.2rem' }}>Ajukan Pendaftaran PKL</h3>
-                {pendaftaranMsg.text && (
-                  <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', borderRadius: '12px', fontSize: '0.85rem', background: pendaftaranMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${pendaftaranMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: pendaftaranMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
-                    <span>{pendaftaranMsg.text}</span>
-                  </div>
-                )}
-                <div className="registration-form-grid">
-                  <div className="form-group">
-                    <label className="form-label">Nama</label>
-                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={user?.nama || ''} disabled />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Email</label>
-                    <input type="email" className="form-input" style={{ paddingLeft: '1rem' }} value={user?.email || ''} disabled />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">NIM / NIS</label>
-                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.nim_nis} onChange={e => updatePendaftaranField('nim_nis', e.target.value)} placeholder="Masukkan NIM/NIS" />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">No HP</label>
-                    <input type="tel" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.no_hp} onChange={e => updatePendaftaranField('no_hp', e.target.value)} placeholder="08123456789" />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Asal Sekolah / Kampus</label>
-                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.asal_instansi} onChange={e => updatePendaftaranField('asal_instansi', e.target.value)} placeholder="UHAMKA / SMK ..." />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Jurusan</label>
-                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.jurusan} onChange={e => updatePendaftaranField('jurusan', e.target.value)} placeholder="Teknik Informatika" />
-                  </div>
-                  <div className="form-group registration-full-width">
-                    <label className="form-label">Upload Surat Pengantar (PDF)</label>
-                    <input type="file" accept=".pdf" onChange={e => setFileSurat(e.target.files?.[0] || null)} style={{ fontSize: '0.88rem' }} />
-                  </div>
-                  <div className="registration-full-width">
-                    <button className="auth-submit-btn" style={{ maxWidth: '250px' }} onClick={handlePendaftaran} disabled={submittingPendaftaran}>
-                      {submittingPendaftaran ? 'Mengirim...' : 'Kirim Pendaftaran'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="dash-table-card">
-                <div className="dash-table-header"><h3>Riwayat Pendaftaran</h3></div>
-                <div className="dash-table-wrapper">
-                  {loadingPendaftaran ? (
-                    <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
-                  ) : (
-                    <table className="dash-table">
-                      <thead><tr><th>No</th><th>Tanggal Daftar</th><th>Status</th><th>File Surat</th></tr></thead>
-                      <tbody>
-                        {pendaftaranList.map((p, i) => (
-                          <tr key={p.id_pendaftaran}>
-                            <td>{i + 1}</td>
-                            <td>{formatDateStr(p.tanggal_daftar)}</td>
-                            <td><span className={`status-badge status-${p.status}`}>{p.status}</span></td>
-                            <td>{p.file_surat ? <a href={`http://localhost:8080/uploads/${p.file_surat}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1a5c38', textDecoration: 'underline' }}>Lihat File</a> : '-'}</td>
-                          </tr>
-                        ))}
-                        {pendaftaranList.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada pendaftaran</td></tr>}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* PENDAFTARAN DIPINDAH KE REGISTER PAGE */}
 
           {/* ======= AKTIVITAS ======= */}
           {activeMenu === 'aktivitas' && (
