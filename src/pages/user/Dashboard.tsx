@@ -50,12 +50,31 @@ interface ActivityLog {
   tanggal?: string;
 }
 
+const ACTIVITY_STORAGE_KEY = 'user_activity_logs';
+
+function loadLocalActivityLogs(): ActivityLog[] {
+  try {
+    const raw = sessionStorage.getItem(ACTIVITY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalActivityLog(log: ActivityLog) {
+  const logs = loadLocalActivityLogs();
+  logs.unshift(log);
+  const trimmed = logs.slice(0, 50); // keep last 50
+  sessionStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(trimmed));
+}
+
 function UserDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [mobileOverlay, setMobileOverlay] = useState(false);
 
   // Absensi states
   const [absensiHistory, setAbsensiHistory] = useState<AbsensiRecord[]>([]);
@@ -95,6 +114,14 @@ function UserDashboard() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Close sidebar on mobile when navigating
+  useEffect(() => {
+    if (window.innerWidth <= 768) {
+      setSidebarOpen(false);
+      setMobileOverlay(false);
+    }
+  }, [activeMenu]);
 
   useEffect(() => {
     if (activeMenu === 'riwayat' || activeMenu === 'dashboard') fetchAbsensiHistory();
@@ -145,14 +172,6 @@ function UserDashboard() {
     no_hp: item.no_hp,
   });
 
-  const normalizeActivity = (item: any, index: number): ActivityLog => ({
-    id_log: item.id_log ?? item.id_aktivitas ?? item.id ?? index + 1,
-    aktivitas: item.aktivitas || item.activity || item.action || item.judul || 'Aktivitas',
-    keterangan: item.keterangan || item.description || item.detail,
-    created_at: item.created_at || item.waktu || item.tanggal,
-    tanggal: item.tanggal,
-  });
-
   const fetchAbsensiHistory = async () => {
     setLoadingAbsensi(true);
     try {
@@ -168,59 +187,34 @@ function UserDashboard() {
   const fetchPendaftaran = async () => {
     setLoadingPendaftaran(true);
     try {
-      const endpoints = ['/pendaftaran/history', '/pendaftaran', '/peserta/me'];
-      let rows: PendaftaranRecord[] = [];
-
-      for (const endpoint of endpoints) {
-        try {
-          const res = await api.get(endpoint);
-          rows = unwrapList(res.data).map(normalizePendaftaran);
-          if (rows.length) break;
-        } catch (err: any) {
-          if ([401, 403].includes(err.response?.status)) throw err;
-        }
-      }
-
+      // Correct endpoint is /pendaftaran (backend filters by user role automatically)
+      const res = await api.get('/pendaftaran');
+      const rows = unwrapList(res.data).map(normalizePendaftaran);
       rows.sort((a, b) => getDateValue(b.tanggal_daftar || b.created_at) - getDateValue(a.tanggal_daftar || a.created_at));
       setPendaftaranList(rows);
-    } catch { setPendaftaranList([]); }
-    finally { setLoadingPendaftaran(false); }
+    } catch {
+      setPendaftaranList([]);
+    } finally {
+      setLoadingPendaftaran(false);
+    }
   };
 
+  // Activity logs stored locally in sessionStorage (no backend endpoint)
   const fetchActivityLogs = async () => {
     setLoadingActivity(true);
-    try {
-      const endpoints = ['/aktivitas', '/log-aktivitas', '/activity-log', '/logs/activity'];
-      let rows: ActivityLog[] = [];
-
-      for (const endpoint of endpoints) {
-        try {
-          const res = await api.get(endpoint);
-          rows = unwrapList(res.data).map(normalizeActivity);
-          if (rows.length) break;
-        } catch (err: any) {
-          if ([401, 403].includes(err.response?.status)) throw err;
-        }
-      }
-
-      rows.sort((a, b) => getDateValue(b.created_at || b.tanggal) - getDateValue(a.created_at || a.tanggal));
-      setActivityLogs(rows);
-    } catch { setActivityLogs([]); }
-    finally { setLoadingActivity(false); }
+    setActivityLogs(loadLocalActivityLogs());
+    setLoadingActivity(false);
   };
 
-  const recordActivity = async (aktivitas: string, keterangan?: string) => {
-    const payload = { aktivitas, keterangan, id_user: user?.id_user };
-    const endpoints = ['/aktivitas', '/log-aktivitas', '/activity-log'];
-
-    for (const endpoint of endpoints) {
-      try {
-        await api.post(endpoint, payload);
-        return;
-      } catch (err: any) {
-        if ([401, 403].includes(err.response?.status)) return;
-      }
-    }
+  const recordActivity = (aktivitas: string, keterangan?: string) => {
+    const log: ActivityLog = {
+      id_log: Date.now(),
+      aktivitas,
+      keterangan,
+      created_at: new Date().toISOString(),
+    };
+    saveLocalActivityLog(log);
+    setActivityLogs(loadLocalActivityLogs());
   };
 
   const handleAbsenMasuk = async () => {
@@ -237,7 +231,6 @@ function UserDashboard() {
       setLokasi(''); setFoto(null);
       recordActivity('Absensi masuk', `Lokasi: ${lokasi}`);
       fetchAbsensiHistory();
-      fetchActivityLogs();
     } catch (err: any) {
       setAbsenMsg({ type: 'error', text: err.response?.data?.message || 'Gagal absen masuk' });
     } finally { setSubmittingAbsen(false); }
@@ -253,7 +246,6 @@ function UserDashboard() {
       setAbsenMsg({ type: 'success', text: 'Absensi pulang berhasil!' });
       recordActivity('Absensi pulang', lokasi.trim() ? `Lokasi: ${lokasi}` : undefined);
       fetchAbsensiHistory();
-      fetchActivityLogs();
     } catch (err: any) {
       setAbsenMsg({ type: 'error', text: err.response?.data?.message || 'Gagal absen pulang' });
     } finally { setSubmittingAbsen(false); }
@@ -269,21 +261,12 @@ function UserDashboard() {
     setPendaftaranMsg({ type: '', text: '' });
     try {
       const fd = new FormData();
-      if (user?.id_user) fd.append('id_user', String(user.id_user));
-      fd.append('nama', user?.nama || '');
-      fd.append('email', user?.email || '');
-      fd.append('nim_nis', pendaftaranForm.nim_nis);
-      fd.append('asal_instansi', pendaftaranForm.asal_instansi);
-      fd.append('jurusan', pendaftaranForm.jurusan);
-      fd.append('no_hp', pendaftaranForm.no_hp);
-      fd.append('status_pkl', 'pending');
       fd.append('file_surat', fileSurat);
       await api.post('/pendaftaran', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setPendaftaranMsg({ type: 'success', text: 'Pendaftaran berhasil dikirim!' });
       setFileSurat(null);
       recordActivity('Mengirim pendaftaran PKL', `${pendaftaranForm.nim_nis} - ${pendaftaranForm.asal_instansi}`);
       fetchPendaftaran();
-      fetchActivityLogs();
     } catch (err: any) {
       setPendaftaranMsg({ type: 'error', text: err.response?.data?.message || 'Gagal mengirim pendaftaran' });
     } finally { setSubmittingPendaftaran(false); }
@@ -295,6 +278,22 @@ function UserDashboard() {
     navigate('/login');
   };
 
+  const handleMenuClick = (id: string) => {
+    setActiveMenu(id);
+    if (window.innerWidth <= 768) {
+      setSidebarOpen(false);
+      setMobileOverlay(false);
+    }
+  };
+
+  const toggleSidebar = () => {
+    const newOpen = !sidebarOpen;
+    setSidebarOpen(newOpen);
+    if (window.innerWidth <= 768) {
+      setMobileOverlay(newOpen);
+    }
+  };
+
   const formatDate = (d: Date) => d.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const formatTime = (d: Date) => d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const formatDateStr = (s?: string) => {
@@ -304,8 +303,14 @@ function UserDashboard() {
   };
   const formatTimeStr = (s?: string) => {
     if (!s) return '-';
+    // Handle time-only values like "0001-01-01T07:00:00Z"
     const d = new Date(s);
-    return Number.isNaN(d.getTime()) ? s : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    if (Number.isNaN(d.getTime())) return s;
+    // If year is 1, it's a time-only value
+    if (d.getFullYear() === 1) {
+      return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   };
   const updatePendaftaranField = (field: keyof PendaftaranForm, value: string) => {
     setPendaftaranForm((current) => ({ ...current, [field]: value }));
@@ -348,6 +353,11 @@ function UserDashboard() {
 
   return (
     <div className="dashboard-layout">
+      {/* Mobile Overlay */}
+      {mobileOverlay && (
+        <div className="sidebar-overlay" onClick={() => { setSidebarOpen(false); setMobileOverlay(false); }} />
+      )}
+
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <div className="sidebar-header">
@@ -360,7 +370,7 @@ function UserDashboard() {
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (
-            <button key={item.id} className={`sidebar-nav-item ${activeMenu === item.id ? 'active' : ''}`} onClick={() => setActiveMenu(item.id)} title={item.label}>
+            <button key={item.id} className={`sidebar-nav-item ${activeMenu === item.id ? 'active' : ''}`} onClick={() => handleMenuClick(item.id)} title={item.label}>
               {getIcon(item.icon)}
               {sidebarOpen && <span>{item.label}</span>}
             </button>
@@ -377,7 +387,7 @@ function UserDashboard() {
       {/* Main */}
       <main className="dashboard-main">
         <header className="topbar">
-          <button className="topbar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
+          <button className="topbar-toggle" onClick={toggleSidebar} aria-label="Toggle menu">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div className="topbar-info"><h2 className="topbar-title">{getMenuTitle()}</h2></div>
@@ -398,11 +408,11 @@ function UserDashboard() {
                   <div className="welcome-time">{formatTime(currentTime)}</div>
                 </div>
                 <div className="welcome-actions">
-                  <button className="btn-absen btn-masuk-absen" onClick={() => setActiveMenu('absensi')}>
+                  <button className="btn-absen btn-masuk-absen" onClick={() => handleMenuClick('absensi')}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
                     Absen Masuk
                   </button>
-                  <button className="btn-absen btn-pulang-absen" onClick={() => setActiveMenu('absensi')}>
+                  <button className="btn-absen btn-pulang-absen" onClick={() => handleMenuClick('absensi')}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
                     Absen Pulang
                   </button>
@@ -439,7 +449,7 @@ function UserDashboard() {
               <div className="dash-table-card">
                 <div className="dash-table-header">
                   <h3>Riwayat Absensi Terbaru</h3>
-                  <button className="dash-table-link" onClick={() => setActiveMenu('riwayat')}>Lihat Semua →</button>
+                  <button className="dash-table-link" onClick={() => handleMenuClick('riwayat')}>Lihat Semua →</button>
                 </div>
                 <div className="dash-table-wrapper">
                   <table className="dash-table">
@@ -468,11 +478,11 @@ function UserDashboard() {
               <div className="dash-table-card" style={{ padding: '2rem' }}>
                 <h3 style={{ marginBottom: '1.5rem', color: '#0f3d24', fontSize: '1.2rem' }}>Form Absensi</h3>
                 {absenMsg.text && (
-                  <div className={`auth-${absenMsg.type} animate-fade-in`} style={{ marginBottom: '1rem' }}>
+                  <div className={`auth-${absenMsg.type} animate-fade-in`} style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', borderRadius: '12px', fontSize: '0.85rem', background: absenMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${absenMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: absenMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
                     <span>{absenMsg.text}</span>
                   </div>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px' }}>
+                <div className="absensi-form-grid">
                   <div className="form-group">
                     <label className="form-label">Lokasi</label>
                     <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={lokasi} onChange={e => setLokasi(e.target.value)} placeholder="Masukkan lokasi Anda" />
@@ -481,7 +491,7 @@ function UserDashboard() {
                     <label className="form-label">Foto Selfie</label>
                     <input type="file" accept="image/*" onChange={e => setFoto(e.target.files?.[0] || null)} style={{ fontSize: '0.88rem' }} />
                   </div>
-                  <div style={{ display: 'flex', gap: '0.8rem', marginTop: '0.5rem' }}>
+                  <div className="absensi-btn-group">
                     <button className="btn-absen btn-masuk-absen" onClick={handleAbsenMasuk} disabled={submittingAbsen} style={{ border: '2px solid #1a5c38' }}>
                       {submittingAbsen ? 'Memproses...' : '✓ Absen Masuk'}
                     </button>
@@ -531,7 +541,7 @@ function UserDashboard() {
               <div className="dash-table-card" style={{ padding: '2rem' }}>
                 <h3 style={{ marginBottom: '1.5rem', color: '#0f3d24', fontSize: '1.2rem' }}>Ajukan Pendaftaran PKL</h3>
                 {pendaftaranMsg.text && (
-                  <div className={`auth-${pendaftaranMsg.type} animate-fade-in`} style={{ marginBottom: '1rem' }}>
+                  <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', borderRadius: '12px', fontSize: '0.85rem', background: pendaftaranMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${pendaftaranMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: pendaftaranMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
                     <span>{pendaftaranMsg.text}</span>
                   </div>
                 )}
@@ -560,13 +570,15 @@ function UserDashboard() {
                     <label className="form-label">Jurusan</label>
                     <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={pendaftaranForm.jurusan} onChange={e => updatePendaftaranField('jurusan', e.target.value)} placeholder="Teknik Informatika" />
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Upload Surat Pengantar</label>
-                    <input type="file" accept=".pdf,.doc,.docx" onChange={e => setFileSurat(e.target.files?.[0] || null)} style={{ fontSize: '0.88rem' }} />
+                  <div className="form-group registration-full-width">
+                    <label className="form-label">Upload Surat Pengantar (PDF)</label>
+                    <input type="file" accept=".pdf" onChange={e => setFileSurat(e.target.files?.[0] || null)} style={{ fontSize: '0.88rem' }} />
                   </div>
-                  <button className="auth-submit-btn" style={{ maxWidth: '250px' }} onClick={handlePendaftaran} disabled={submittingPendaftaran}>
-                    {submittingPendaftaran ? 'Mengirim...' : 'Kirim Pendaftaran'}
-                  </button>
+                  <div className="registration-full-width">
+                    <button className="auth-submit-btn" style={{ maxWidth: '250px' }} onClick={handlePendaftaran} disabled={submittingPendaftaran}>
+                      {submittingPendaftaran ? 'Mengirim...' : 'Kirim Pendaftaran'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -577,19 +589,17 @@ function UserDashboard() {
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Tanggal Daftar</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>Status</th></tr></thead>
+                      <thead><tr><th>No</th><th>Tanggal Daftar</th><th>Status</th><th>File Surat</th></tr></thead>
                       <tbody>
                         {pendaftaranList.map((p, i) => (
                           <tr key={p.id_pendaftaran}>
                             <td>{i + 1}</td>
                             <td>{formatDateStr(p.tanggal_daftar)}</td>
-                            <td>{p.nim_nis || '-'}</td>
-                            <td>{p.asal_instansi || '-'}</td>
-                            <td>{p.jurusan || '-'}</td>
                             <td><span className={`status-badge status-${p.status}`}>{p.status}</span></td>
+                            <td>{p.file_surat ? <a href={`http://localhost:8080/uploads/${p.file_surat}`} target="_blank" rel="noopener noreferrer" style={{ color: '#1a5c38', textDecoration: 'underline' }}>Lihat File</a> : '-'}</td>
                           </tr>
                         ))}
-                        {pendaftaranList.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada pendaftaran</td></tr>}
+                        {pendaftaranList.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada pendaftaran</td></tr>}
                       </tbody>
                     </table>
                   )}
@@ -602,7 +612,7 @@ function UserDashboard() {
           {activeMenu === 'aktivitas' && (
             <div className="dashboard-home">
               <div className="dash-table-card">
-                <div className="dash-table-header"><h3>Log Aktivitas</h3></div>
+                <div className="dash-table-header"><h3>Log Aktivitas</h3><span style={{ fontSize: '0.78rem', color: '#8a8a9e' }}>Disimpan di sesi ini</span></div>
                 {loadingActivity ? (
                   <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat aktivitas...</div>
                 ) : (
@@ -618,7 +628,7 @@ function UserDashboard() {
                       </div>
                     ))}
                     {activityLogs.length === 0 && (
-                      <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Belum ada log aktivitas</div>
+                      <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Belum ada log aktivitas di sesi ini</div>
                     )}
                   </div>
                 )}
@@ -630,7 +640,7 @@ function UserDashboard() {
           {activeMenu === 'profil' && (
             <div className="dashboard-home">
               <div className="dash-table-card" style={{ padding: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
                   <div className="topbar-user-avatar" style={{ width: '72px', height: '72px', fontSize: '1.8rem', borderRadius: '18px' }}>
                     {(user?.nama || 'U').charAt(0).toUpperCase()}
                   </div>
@@ -640,7 +650,7 @@ function UserDashboard() {
                     <span className="status-badge status-hadir" style={{ marginTop: '0.5rem', display: 'inline-block' }}>{user?.role}</span>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', maxWidth: '500px' }}>
+                <div className="profile-info-grid">
                   <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>ID User</label><p style={{ fontWeight: 600, color: '#0f3d24' }}>{user?.id_user}</p></div>
                   <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>Role</label><p style={{ fontWeight: 600, color: '#0f3d24', textTransform: 'capitalize' as const }}>{user?.role}</p></div>
                   <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>Nama</label><p style={{ fontWeight: 600, color: '#0f3d24' }}>{user?.nama}</p></div>

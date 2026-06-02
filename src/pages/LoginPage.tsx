@@ -19,9 +19,14 @@ function LoginPage() {
     try {
       const res = await api.post('/login', { email, password });
       const { token, user } = res.data.data;
+
+      // Store credentials BEFORE navigating so interceptors have the token
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
-      navigate(user.role === 'admin' ? '/admin/dashboard' : '/dashboard');
+
+      // Use replace:true so the back button doesn't return to login
+      const destination = user.role === 'admin' ? '/admin/dashboard' : '/dashboard';
+      navigate(destination, { replace: true });
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Login gagal. Periksa email dan password Anda.';
       setError(msg);

@@ -45,6 +45,7 @@ function AdminDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeMenu, setActiveMenu] = useState('dashboard');
+  const [mobileOverlay, setMobileOverlay] = useState(false);
 
   // Dashboard
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -162,6 +163,22 @@ function AdminDashboard() {
     navigate('/login');
   };
 
+  const handleMenuClick = (id: string) => {
+    setActiveMenu(id);
+    if (window.innerWidth <= 768) {
+      setSidebarOpen(false);
+      setMobileOverlay(false);
+    }
+  };
+
+  const toggleSidebar = () => {
+    const newOpen = !sidebarOpen;
+    setSidebarOpen(newOpen);
+    if (window.innerWidth <= 768) {
+      setMobileOverlay(newOpen);
+    }
+  };
+
   const formatDateStr = (s: string) => { try { return new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
   const formatTimeStr = (s?: string) => { if (!s) return '-'; try { const d = new Date(s); return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }); } catch { return s; } };
 
@@ -195,6 +212,11 @@ function AdminDashboard() {
 
   return (
     <div className="dashboard-layout">
+      {/* Mobile Overlay */}
+      {mobileOverlay && (
+        <div className="sidebar-overlay" onClick={() => { setSidebarOpen(false); setMobileOverlay(false); }} />
+      )}
+
       {/* Sidebar */}
       <aside className={`sidebar sidebar-admin ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <div className="sidebar-header">
@@ -207,7 +229,7 @@ function AdminDashboard() {
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (
-            <button key={item.id} className={`sidebar-nav-item ${activeMenu === item.id ? 'active' : ''}`} onClick={() => setActiveMenu(item.id)} title={item.label}>
+            <button key={item.id} className={`sidebar-nav-item ${activeMenu === item.id ? 'active' : ''}`} onClick={() => handleMenuClick(item.id)} title={item.label}>
               {getIcon(item.icon)}
               {sidebarOpen && <span>{item.label}</span>}
             </button>
@@ -224,7 +246,7 @@ function AdminDashboard() {
       {/* Main */}
       <main className="dashboard-main">
         <header className="topbar">
-          <button className="topbar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
+          <button className="topbar-toggle" onClick={toggleSidebar} aria-label="Toggle menu">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div className="topbar-info"><h2 className="topbar-title">{getMenuTitle()}</h2></div>
@@ -276,15 +298,15 @@ function AdminDashboard() {
                 </div>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                <div className="dash-table-card" style={{ cursor: 'pointer' }} onClick={() => setActiveMenu('peserta')}>
+              <div className="admin-quick-grid">
+                <div className="dash-table-card" style={{ cursor: 'pointer' }} onClick={() => handleMenuClick('peserta')}>
                   <div className="dash-table-header"><h3>Data Peserta</h3><span className="dash-table-link">Kelola →</span></div>
                   <div style={{ padding: '1.5rem', textAlign: 'center', color: '#5a5a6e' }}>
                     <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#1a5c38' }}>{stats?.total_peserta || 0}</div>
                     <div style={{ fontSize: '0.85rem' }}>Peserta terdaftar</div>
                   </div>
                 </div>
-                <div className="dash-table-card" style={{ cursor: 'pointer' }} onClick={() => setActiveMenu('pendaftaran')}>
+                <div className="dash-table-card" style={{ cursor: 'pointer' }} onClick={() => handleMenuClick('pendaftaran')}>
                   <div className="dash-table-header"><h3>Pendaftaran</h3><span className="dash-table-link">Verifikasi →</span></div>
                   <div style={{ padding: '1.5rem', textAlign: 'center', color: '#5a5a6e' }}>
                     <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#ef4444' }}>{pendingPeserta.length}</div>
