@@ -328,7 +328,7 @@ function LandingPage() {
           </div>
           <div className="footer-contact">
             <h4 className="footer-title">Hubungi Kami</h4>
-            <p className="footer-contact-item">Jl. Limau II No.2, Jakarta Selatan</p>
+            <p className="footer-contact-item">Jl. Tanah Merdeka No.20, RT.11/RW.2,Rambutan, Kec.Ciracas,Kota Jakarta Timur, DKI Jakarta 13830</p>
             <p className="footer-contact-item">(021) 7395766</p>
             <p className="footer-contact-item">bpti@uhamka.ac.id</p>
           </div>
