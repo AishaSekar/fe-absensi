@@ -14,6 +14,8 @@ function RegisterPage() {
   const [jurusan, setJurusan] = useState('');
   const [noHp, setNoHp] = useState('');
   const [fileSurat, setFileSurat] = useState<File | null>(null);
+  const [fileCV, setFileCV] = useState<File | null>(null);
+  const [fileSuratLamaran, setFileSuratLamaran] = useState<File | null>(null);
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -34,16 +36,25 @@ function RegisterPage() {
       setError('Password minimal 8 karakter.');
       return;
     }
-
     if (!fileSurat) {
-      setError('File surat pengantar wajib diunggah (PDF).');
+      setError('File surat pengantar wajib diunggah.');
+      return;
+    }
+
+    if (!fileCV) {
+      setError('File CV wajib diunggah.');
+      return;
+    }
+
+    if (!fileSuratLamaran) {
+      setError('File surat lamaran wajib diunggah.');
       return;
     }
 
     setLoading(true);
 
     try {
-      // 1. Register User + Peserta sekaligus (semua field wajib dikirim dalam satu request)
+      // 1. Register User + Peserta sekaligus
       await api.post('/register', {
         nama: nama.trim(),
         email: email.trim().toLowerCase(),
@@ -65,9 +76,11 @@ function RegisterPage() {
         throw new Error('Gagal mendapatkan token autentikasi.');
       }
 
-      // 3. Upload File Surat Pengantar
+      // 3. Upload File Surat Pengantar, CV, dan Surat Lamaran
       const fd = new FormData();
-      fd.append('file_surat', fileSurat!);
+      fd.append('file_surat', fileSurat);
+      fd.append('file_cv', fileCV);
+      fd.append('file_surat_lamaran', fileSuratLamaran);
       await api.post('/pendaftaran', fd, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -193,9 +206,23 @@ function RegisterPage() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="fileSurat" className="form-label">Surat Pengantar (PDF)</label>
+              <label htmlFor="fileSurat" className="form-label">Surat Pengantar (PDF / Gambar)</label>
               <div className="input-wrapper" style={{ padding: '0.5rem 0' }}>
-                <input id="fileSurat" type="file" accept=".pdf" onChange={(e) => setFileSurat(e.target.files?.[0] || null)} style={{ fontSize: '0.85rem' }} required />
+                <input id="fileSurat" type="file" accept=".pdf,image/*" onChange={(e) => setFileSurat(e.target.files?.[0] || null)} style={{ fontSize: '0.85rem' }} required />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="fileCV" className="form-label">Curriculum Vitae (CV) (PDF / Gambar)</label>
+              <div className="input-wrapper" style={{ padding: '0.5rem 0' }}>
+                <input id="fileCV" type="file" accept=".pdf,image/*" onChange={(e) => setFileCV(e.target.files?.[0] || null)} style={{ fontSize: '0.85rem' }} required />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="fileSuratLamaran" className="form-label">Surat Lamaran (PDF / Gambar)</label>
+              <div className="input-wrapper" style={{ padding: '0.5rem 0' }}>
+                <input id="fileSuratLamaran" type="file" accept=".pdf,image/*" onChange={(e) => setFileSuratLamaran(e.target.files?.[0] || null)} style={{ fontSize: '0.85rem' }} required />
               </div>
             </div>
           </div>

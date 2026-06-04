@@ -83,6 +83,7 @@ function UserDashboard() {
   const [lokasi, setLokasi] = useState('');
   const [foto, setFoto] = useState<File | null>(null);
   const [submittingAbsen, setSubmittingAbsen] = useState(false);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
 
   // Pendaftaran states
   const [pendaftaranList, setPendaftaranList] = useState<PendaftaranRecord[]>([]);
@@ -99,6 +100,9 @@ function UserDashboard() {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [loadingActivity, setLoadingActivity] = useState(false);
 
+  const [pendaftaranStatus, setPendaftaranStatus] = useState<string>('pending');
+  const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
+
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (stored) {
@@ -107,6 +111,26 @@ function UserDashboard() {
     }
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const res = await api.get('/pendaftaran');
+        const list = res.data?.data || res.data || [];
+        if (list.length > 0) {
+          setPendaftaranStatus(list[0].status?.toLowerCase() || 'pending');
+        } else {
+          setPendaftaranStatus('pending');
+        }
+      } catch (err) {
+        console.error('Gagal memuat status pendaftaran:', err);
+        setPendaftaranStatus('pending');
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+    checkStatus();
   }, []);
 
   // Close sidebar on mobile when navigating
@@ -120,6 +144,9 @@ function UserDashboard() {
   useEffect(() => {
     if (activeMenu === 'riwayat' || activeMenu === 'dashboard') fetchAbsensiHistory();
     if (activeMenu === 'aktivitas' || activeMenu === 'dashboard') fetchActivityLogs();
+    if (activeMenu === 'absensi') {
+      getLocationGPS();
+    }
   }, [activeMenu]);
 
   const unwrapList = (payload: any) => {
@@ -219,6 +246,42 @@ function UserDashboard() {
       return 'Data peserta belum terdaftar. Silakan lengkapi data pendaftaran PKL terlebih dahulu melalui menu Pendaftaran.';
     }
     return msg || 'Terjadi kesalahan. Silakan coba lagi.';
+  };
+
+  const getLocationGPS = () => {
+    if (!navigator.geolocation) {
+      setAbsenMsg({ type: 'error', text: 'Browser Anda tidak mendukung Geolocation/GPS.' });
+      return;
+    }
+
+    setFetchingLocation(true);
+    setAbsenMsg({ type: '', text: '' });
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setLokasi(`${latitude}, ${longitude}`);
+        setFetchingLocation(false);
+      },
+      (error) => {
+        console.error(error);
+        let msg = 'Gagal mendapatkan lokasi GPS.';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Izin lokasi (GPS) ditolak oleh browser. Silakan aktifkan izin lokasi.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = 'Lokasi tidak tersedia.';
+        } else if (error.code === error.TIMEOUT) {
+          msg = 'Waktu permintaan lokasi habis.';
+        }
+        setAbsenMsg({ type: 'error', text: msg });
+        setFetchingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
   };
 
   const handleAbsenMasuk = async () => {
@@ -353,6 +416,89 @@ function UserDashboard() {
     return item?.label || 'Dashboard';
   };
 
+  if (loadingStatus) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f4f2', color: '#1a5c38', fontWeight: 600, fontFamily: 'sans-serif' }}>
+        Memeriksa status pendaftaran...
+      </div>
+    );
+  }
+
+  if (pendaftaranStatus !== 'diterima') {
+    return (
+      <div className="dashboard-layout">
+        {/* Mobile Overlay */}
+        {mobileOverlay && (
+          <div className="sidebar-overlay" onClick={() => { setSidebarOpen(false); setMobileOverlay(false); }} />
+        )}
+
+        {/* Restricted Sidebar */}
+        <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+          <div className="sidebar-header">
+            <div className="sidebar-brand">
+              <div className="sidebar-brand-icon" style={{ background: 'transparent', padding: '2px' }}>
+                <img src="/images/logo-bpti.png" alt="BPTI Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              </div>
+              {sidebarOpen && <div className="sidebar-brand-text"><span className="sidebar-brand-name">BPTI UHAMKA</span><span className="sidebar-brand-sub">Absensi PKL</span></div>}
+            </div>
+          </div>
+          <nav className="sidebar-nav">
+            <button className="sidebar-nav-item active">
+              {getIcon('grid')}
+              {sidebarOpen && <span>Dashboard</span>}
+            </button>
+          </nav>
+          <div className="sidebar-footer">
+            <button className="sidebar-logout" onClick={handleLogout} title="Keluar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+              {sidebarOpen && <span>Keluar</span>}
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Content for Pending/Rejected */}
+        <main className="dashboard-main">
+          <header className="topbar">
+            <button className="topbar-toggle" onClick={toggleSidebar} aria-label="Toggle menu">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+            <div className="topbar-info"><h2 className="topbar-title">Status Pendaftaran</h2></div>
+            <div className="topbar-user">
+              <div className="topbar-user-info"><span className="topbar-user-name">{user?.nama || 'User'}</span><span className="topbar-user-role">Peserta</span></div>
+              <div className="topbar-user-avatar">{(user?.nama || 'U').charAt(0).toUpperCase()}</div>
+            </div>
+          </header>
+
+          <div className="dashboard-content" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 80px)' }}>
+            {pendaftaranStatus === 'pending' ? (
+              <div className="dash-table-card" style={{ maxWidth: '600px', width: '100%', padding: '2.5rem', textAlign: 'center', borderRadius: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
+                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>⏳</div>
+                <h2 style={{ color: '#0f3d24', marginBottom: '1rem', fontWeight: 800 }}>Pendaftaran Sedang Ditinjau</h2>
+                <p style={{ color: '#5a5a6e', lineHeight: 1.6, marginBottom: '2rem', fontFamily: 'sans-serif' }}>
+                  Halo <strong>{user?.nama}</strong>, pendaftaran PKL Anda di BPTI UHAMKA sedang dalam proses peninjauan oleh Administrator. Anda belum dapat melakukan absensi sampai pendaftaran disetujui.
+                </p>
+                <div style={{ background: '#fef3c7', color: '#d97706', padding: '0.8rem 1.2rem', borderRadius: '12px', fontSize: '0.88rem', fontWeight: 600, display: 'inline-block', fontFamily: 'sans-serif' }}>
+                  Status Pendaftaran: PENDING
+                </div>
+              </div>
+            ) : (
+              <div className="dash-table-card" style={{ maxWidth: '600px', width: '100%', padding: '2.5rem', textAlign: 'center', borderRadius: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
+                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>❌</div>
+                <h2 style={{ color: '#dc2626', marginBottom: '1rem', fontWeight: 800 }}>Pendaftaran Ditolak</h2>
+                <p style={{ color: '#5a5a6e', lineHeight: 1.6, marginBottom: '2rem', fontFamily: 'sans-serif' }}>
+                  Halo <strong>{user?.nama}</strong>, mohon maaf pendaftaran PKL Anda di BPTI UHAMKA telah ditolak oleh Administrator. Silakan hubungi pihak BPTI UHAMKA untuk informasi lebih lanjut.
+                </p>
+                <div style={{ background: '#fee2e2', color: '#dc2626', padding: '0.8rem 1.2rem', borderRadius: '12px', fontSize: '0.88rem', fontWeight: 600, display: 'inline-block', fontFamily: 'sans-serif' }}>
+                  Status Pendaftaran: DITOLAK
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard-layout">
       {/* Mobile Overlay */}
@@ -364,8 +510,8 @@ function UserDashboard() {
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <div className="sidebar-header">
           <div className="sidebar-brand">
-            <div className="sidebar-brand-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5"/></svg>
+            <div className="sidebar-brand-icon" style={{ background: 'transparent', padding: '2px' }}>
+              <img src="/images/logo-bpti.png" alt="BPTI Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             {sidebarOpen && <div className="sidebar-brand-text"><span className="sidebar-brand-name">BPTI UHAMKA</span><span className="sidebar-brand-sub">Absensi PKL</span></div>}
           </div>
@@ -486,8 +632,25 @@ function UserDashboard() {
                 )}
                 <div className="absensi-form-grid">
                   <div className="form-group">
-                    <label className="form-label">Lokasi</label>
-                    <input type="text" className="form-input" style={{ paddingLeft: '1rem' }} value={lokasi} onChange={e => setLokasi(e.target.value)} placeholder="Masukkan lokasi Anda" />
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Lokasi (GPS)</span>
+                      <button 
+                        type="button" 
+                        onClick={getLocationGPS} 
+                        disabled={fetchingLocation}
+                        style={{ background: 'none', border: 'none', color: '#1a5c38', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', padding: 0 }}
+                      >
+                        {fetchingLocation ? '⌛ Mendeteksi...' : '📍 Perbarui GPS'}
+                      </button>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      style={{ paddingLeft: '1rem', background: '#f8faf9', color: '#5a5a6e' }} 
+                      value={lokasi} 
+                      readOnly 
+                      placeholder={fetchingLocation ? 'Mendeteksi lokasi GPS...' : 'Koordinat GPS Anda'} 
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Foto Selfie</label>

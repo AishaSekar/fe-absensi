@@ -28,6 +28,13 @@ interface Peserta {
   status_pkl: string;
   created_at: string;
   user?: { nama: string; email: string };
+  pendaftaran?: {
+    id_pendaftaran: number;
+    file_surat: string;
+    file_cv: string;
+    file_surat_lamaran: string;
+    status: string;
+  };
 }
 
 interface AbsensiRecord {
@@ -86,10 +93,27 @@ function AdminDashboard() {
   const fetchPeserta = async () => {
     setLoadingPeserta(true);
     try {
-      const res = await api.get('/peserta');
-      setPesertaList(res.data.data || []);
-    } catch { setPesertaList([]); }
-    finally { setLoadingPeserta(false); }
+      const [resPeserta, resPendaftaran] = await Promise.all([
+        api.get('/peserta'),
+        api.get('/pendaftaran')
+      ]);
+
+      const pendaftaranMap = new Map();
+      (resPendaftaran.data?.data || []).forEach((p: any) => {
+        pendaftaranMap.set(p.id_user, p);
+      });
+
+      const list = (resPeserta.data?.data || []).map((peserta: any) => ({
+        ...peserta,
+        pendaftaran: pendaftaranMap.get(peserta.id_user)
+      }));
+
+      setPesertaList(list);
+    } catch {
+      setPesertaList([]);
+    } finally {
+      setLoadingPeserta(false);
+    }
   };
 
   const fetchAbsensi = async () => {
@@ -209,6 +233,53 @@ function AdminDashboard() {
     return 'Dashboard Admin';
   };
 
+  const renderBerkasLinks = (p: Peserta) => {
+    if (!p.pendaftaran) return <span style={{ color: '#8a8a9e', fontSize: '0.8rem' }}>Belum upload</span>;
+    const { file_surat, file_cv, file_surat_lamaran } = p.pendaftaran;
+    const baseUrl = 'http://localhost:8080/uploads';
+    
+    return (
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        {file_surat && (
+          <a
+            href={`${baseUrl}/${file_surat}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="status-badge"
+            style={{ background: '#e0f2fe', color: '#0369a1', textDecoration: 'none', fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem' }}
+            title="Surat Pengantar"
+          >
+            Surat
+          </a>
+        )}
+        {file_cv && (
+          <a
+            href={`${baseUrl}/${file_cv}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="status-badge"
+            style={{ background: '#f3e8ff', color: '#6b21a8', textDecoration: 'none', fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem' }}
+            title="Curriculum Vitae (CV)"
+          >
+            CV
+          </a>
+        )}
+        {file_surat_lamaran && (
+          <a
+            href={`${baseUrl}/${file_surat_lamaran}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="status-badge"
+            style={{ background: '#fef3c7', color: '#92400e', textDecoration: 'none', fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem' }}
+            title="Surat Lamaran"
+          >
+            Lamaran
+          </a>
+        )}
+      </div>
+    );
+  };
+
   const pendingPeserta = pesertaList.filter((p) => p.status_pkl?.toLowerCase() === 'pending');
 
   return (
@@ -222,8 +293,8 @@ function AdminDashboard() {
       <aside className={`sidebar sidebar-admin ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         <div className="sidebar-header">
           <div className="sidebar-brand">
-            <div className="sidebar-brand-icon" style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <div className="sidebar-brand-icon" style={{ background: 'transparent', padding: '2px' }}>
+              <img src="/images/logo-bpti.png" alt="BPTI Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             {sidebarOpen && <div className="sidebar-brand-text"><span className="sidebar-brand-name">Admin</span><span className="sidebar-brand-sub">BPTI UHAMKA</span></div>}
           </div>
@@ -369,7 +440,7 @@ function AdminDashboard() {
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Nama</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>No HP</th><th>Status</th><th>Aksi</th></tr></thead>
+                      <thead><tr><th>No</th><th>Nama</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>No HP</th><th>Berkas</th><th>Status</th><th>Aksi</th></tr></thead>
                       <tbody>
                         {pesertaList.map((p, i) => (
                           <tr key={p.id_peserta}>
@@ -379,6 +450,7 @@ function AdminDashboard() {
                             <td>{p.asal_instansi}</td>
                             <td>{p.jurusan}</td>
                             <td>{p.no_hp || '-'}</td>
+                            <td>{renderBerkasLinks(p)}</td>
                             <td><span className={`status-badge status-${p.status_pkl?.toLowerCase()}`}>{p.status_pkl}</span></td>
                             <td>
                               <div className="table-actions">
@@ -399,7 +471,7 @@ function AdminDashboard() {
                             </td>
                           </tr>
                         ))}
-                        {pesertaList.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data peserta</td></tr>}
+                        {pesertaList.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data peserta</td></tr>}
                       </tbody>
                     </table>
                   )}
@@ -423,7 +495,7 @@ function AdminDashboard() {
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Nama</th><th>Email</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>Status</th><th>Aksi</th></tr></thead>
+                      <thead><tr><th>No</th><th>Nama</th><th>Email</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>Berkas</th><th>Status</th><th>Aksi</th></tr></thead>
                       <tbody>
                         {pendingPeserta.map((p, i) => (
                           <tr key={p.id_peserta}>
@@ -433,6 +505,7 @@ function AdminDashboard() {
                             <td>{p.nim_nis}</td>
                             <td>{p.asal_instansi}</td>
                             <td>{p.jurusan}</td>
+                            <td>{renderBerkasLinks(p)}</td>
                             <td><span className={`status-badge status-${p.status_pkl?.toLowerCase()}`}>{p.status_pkl}</span></td>
                             <td>
                               <div className="table-actions">
@@ -446,7 +519,7 @@ function AdminDashboard() {
                             </td>
                           </tr>
                         ))}
-                        {pendingPeserta.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#8a8a9e' }}>Tidak ada pendaftaran yang menunggu verifikasi</td></tr>}
+                        {pendingPeserta.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#8a8a9e' }}>Tidak ada pendaftaran yang menunggu verifikasi</td></tr>}
                       </tbody>
                     </table>
                   )}
