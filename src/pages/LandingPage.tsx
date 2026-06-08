@@ -2,14 +2,30 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import '../css/LandingPage.css';
 
+const sliderImages = [
+  '/images/fkip.png',
+  '/images/gedung.png',
+  '/images/siber.png',
+  '/images/keren.png',
+];
+
 function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Auto-slide every 4 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % sliderImages.length);
+    }, 4000);
+    return () => clearInterval(interval);
   }, []);
 
   // Intersection Observer for scroll animations
@@ -35,11 +51,8 @@ function LandingPage() {
       <nav className={`navbar ${scrolled ? 'navbar-scrolled' : ''}`}>
         <div className="navbar-container">
           <Link to="/" className="navbar-brand">
-            <div className="brand-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-                <path d="M6 12v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5" />
-              </svg>
+            <div className="brand-icon brand-icon-logo">
+              <img src="/images/logo.png" alt="Logo BPTI UHAMKA" className="brand-logo-img" />
             </div>
             <div className="brand-text">
               <span className="brand-name">BPTI UHAMKA</span>
@@ -86,6 +99,30 @@ function LandingPage() {
 
       {/* ===== HERO SECTION ===== */}
       <section className="hero-section" id="beranda">
+        {/* Background Slider */}
+        <div className="hero-slider">
+          {sliderImages.map((img, index) => (
+            <div
+              key={index}
+              className={`hero-slide ${index === currentSlide ? 'hero-slide-active' : ''}`}
+              style={{ backgroundImage: `url(${img})` }}
+            />
+          ))}
+          <div className="hero-slider-overlay" />
+        </div>
+
+        {/* Slider Dots */}
+        <div className="hero-slider-dots">
+          {sliderImages.map((_, index) => (
+            <button
+              key={index}
+              className={`hero-slider-dot ${index === currentSlide ? 'hero-slider-dot-active' : ''}`}
+              onClick={() => setCurrentSlide(index)}
+              aria-label={`Slide ${index + 1}`}
+            />
+          ))}
+        </div>
+
         <div className="hero-bg-pattern"></div>
         <div className="hero-container">
           <div className="hero-content animate-slide-left">
@@ -122,9 +159,9 @@ function LandingPage() {
           <div className="hero-image-wrapper animate-slide-right">
             <div className="hero-image-glow"></div>
             <img
-              src="/images/fkip.png"
+              src={sliderImages[currentSlide]}
               alt="Kampus UHAMKA"
-              className="hero-image"
+              className="hero-image hero-image-slide"
             />
             <div className="hero-image-decoration"></div>
           </div>
