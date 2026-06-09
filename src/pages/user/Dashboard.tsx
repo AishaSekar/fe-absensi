@@ -50,6 +50,17 @@ interface ActivityLog {
   tanggal?: string;
 }
 
+interface SertifikatRecord {
+  id_sertifikat: number;
+  id_peserta: number;
+  id_user: number;
+  status: 'pending' | 'diberikan' | 'ditolak';
+  file_sertifikat?: string;
+  catatan?: string;
+  tanggal_request: string;
+  tanggal_diberikan?: string;
+}
+
 const ACTIVITY_STORAGE_KEY = 'user_activity_logs';
 
 function loadLocalActivityLogs(): ActivityLog[] {
@@ -103,6 +114,13 @@ function UserDashboard() {
   const [pendaftaranStatus, setPendaftaranStatus] = useState<string>('pending');
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
+  // Sertifikat states
+  const [sertifikatList, setSertifikatList] = useState<SertifikatRecord[]>([]);
+  const [loadingSertifikat, setLoadingSertifikat] = useState(false);
+  const [sertifikatMsg, setSertifikatMsg] = useState({ type: '', text: '' });
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [catatanRequest, setCatatanRequest] = useState('');
+
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (stored) {
@@ -147,6 +165,7 @@ function UserDashboard() {
     if (activeMenu === 'absensi') {
       getLocationGPS();
     }
+    if (activeMenu === 'sertifikat') fetchSertifikat();
   }, [activeMenu]);
 
   const unwrapList = (payload: any) => {
@@ -228,6 +247,31 @@ function UserDashboard() {
     setLoadingActivity(false);
   };
 
+  const fetchSertifikat = async () => {
+    setLoadingSertifikat(true);
+    try {
+      const res = await api.get('/sertifikat');
+      setSertifikatList(res.data.data || []);
+    } catch { setSertifikatList([]); }
+    finally { setLoadingSertifikat(false); }
+  };
+
+  const handleRequestSertifikat = async () => {
+    setSubmittingRequest(true);
+    setSertifikatMsg({ type: '', text: '' });
+    try {
+      const fd = new FormData();
+      if (catatanRequest.trim()) fd.append('catatan', catatanRequest.trim());
+      await api.post('/sertifikat/request', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setSertifikatMsg({ type: 'success', text: 'Permintaan sertifikat berhasil dikirim! Tunggu konfirmasi admin.' });
+      setCatatanRequest('');
+      recordActivity('Request sertifikat', 'Mengirim permintaan sertifikat ke admin');
+      fetchSertifikat();
+    } catch (err: any) {
+      setSertifikatMsg({ type: 'error', text: err.response?.data?.message || 'Gagal mengirim permintaan sertifikat.' });
+    } finally { setSubmittingRequest(false); }
+  };
+
   const recordActivity = (aktivitas: string, keterangan?: string) => {
     const log: ActivityLog = {
       id_log: Date.now(),
@@ -256,11 +300,51 @@ function UserDashboard() {
 
     setFetchingLocation(true);
     setAbsenMsg({ type: '', text: '' });
+    setLokasi('');
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
-        setLokasi(`${latitude}, ${longitude}`);
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
+            { headers: { 'Accept-Language': 'id', 'User-Agent': 'AbsensiPKL/1.0' } }
+          );
+          const data = await res.json();
+          const addr = data.address || {};
+
+          // Susun alamat lengkap: Jalan, RT/RW, Kelurahan, Kecamatan, Kota, Provinsi
+          const parts: string[] = [];
+
+          const jalan = addr.road || addr.pedestrian || addr.footway || addr.path || '';
+          if (jalan) parts.push(jalan);
+
+          // RT/RW dari field quarter atau neighbourhood
+          const rtRw = addr.quarter || '';
+          if (rtRw) parts.push(rtRw);
+
+          const kelurahan = addr.village || addr.suburb || addr.neighbourhood || '';
+          if (kelurahan) parts.push(`Kel. ${kelurahan}`);
+
+          const kecamatan = addr.county || addr.municipality || addr.city_district || '';
+          if (kecamatan) parts.push(`Kec. ${kecamatan}`);
+
+          const kota = addr.city || addr.town || addr.regency || '';
+          if (kota) parts.push(kota);
+
+          const provinsi = addr.state || '';
+          if (provinsi) parts.push(provinsi);
+
+          const alamatLengkap = parts.length > 0
+            ? parts.join(', ')
+            : data.display_name || `${latitude}, ${longitude}`;
+
+          setLokasi(alamatLengkap);
+        } catch {
+          // Fallback ke koordinat jika reverse geocoding gagal
+          setLokasi(`${latitude}, ${longitude}`);
+          setAbsenMsg({ type: 'error', text: 'Gagal mengambil nama alamat, menggunakan koordinat GPS.' });
+        }
         setFetchingLocation(false);
       },
       (error) => {
@@ -269,20 +353,21 @@ function UserDashboard() {
         if (error.code === error.PERMISSION_DENIED) {
           msg = 'Izin lokasi (GPS) ditolak oleh browser. Silakan aktifkan izin lokasi.';
         } else if (error.code === error.POSITION_UNAVAILABLE) {
-          msg = 'Lokasi tidak tersedia.';
+          msg = 'Lokasi tidak tersedia. Pastikan GPS aktif.';
         } else if (error.code === error.TIMEOUT) {
-          msg = 'Waktu permintaan lokasi habis.';
+          msg = 'Waktu permintaan lokasi habis. Coba lagi.';
         }
         setAbsenMsg({ type: 'error', text: msg });
         setFetchingLocation(false);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 15000,
         maximumAge: 0,
       }
     );
   };
+
 
   const handleAbsenMasuk = async () => {
     if (!lokasi.trim()) { setAbsenMsg({ type: 'error', text: 'Lokasi wajib diisi' }); return; }
@@ -304,14 +389,19 @@ function UserDashboard() {
   };
 
   const handleAbsenPulang = async () => {
+    if (!lokasi.trim()) {
+      // Try to get GPS location first if not already set
+      setAbsenMsg({ type: 'error', text: 'Lokasi GPS belum terdeteksi. Klik "Perbarui GPS" terlebih dahulu.' });
+      return;
+    }
     setSubmittingAbsen(true);
     setAbsenMsg({ type: '', text: '' });
     try {
       const fd = new FormData();
-      if (lokasi.trim()) fd.append('lokasi', lokasi);
+      fd.append('lokasi', lokasi);
       await api.post('/absensi/pulang', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAbsenMsg({ type: 'success', text: 'Absensi pulang berhasil!' });
-      recordActivity('Absensi pulang', lokasi.trim() ? `Lokasi: ${lokasi}` : undefined);
+      recordActivity('Absensi pulang', `Lokasi: ${lokasi}`);
       fetchAbsensiHistory();
     } catch (err: any) {
       setAbsenMsg({ type: 'error', text: getAbsensiErrorMsg(err) });
@@ -387,6 +477,7 @@ function UserDashboard() {
     { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
     { id: 'absensi', label: 'Absensi', icon: 'clock' },
     { id: 'riwayat', label: 'Riwayat', icon: 'list' },
+    { id: 'sertifikat', label: 'Sertifikat', icon: 'award' },
     { id: 'aktivitas', label: 'Aktivitas', icon: 'activity' },
     { id: 'profil', label: 'Profil', icon: 'user' },
   ];
@@ -399,6 +490,7 @@ function UserDashboard() {
       file: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
       activity: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
       user: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+      award: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>,
     };
     return icons[icon] || null;
   };
@@ -413,6 +505,7 @@ function UserDashboard() {
     if (activeMenu === 'riwayat') return 'Riwayat Absensi';
     if (activeMenu === 'aktivitas') return 'Log Aktivitas';
     if (activeMenu === 'profil') return 'Profil Saya';
+    if (activeMenu === 'sertifikat') return 'Sertifikat PKL';
     return item?.label || 'Dashboard';
   };
 
@@ -633,24 +726,29 @@ function UserDashboard() {
                 <div className="absensi-form-grid">
                   <div className="form-group">
                     <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Lokasi (GPS)</span>
-                      <button 
-                        type="button" 
-                        onClick={getLocationGPS} 
+                      <span>📍 Lokasi Absensi</span>
+                      <button
+                        type="button"
+                        onClick={getLocationGPS}
                         disabled={fetchingLocation}
-                        style={{ background: 'none', border: 'none', color: '#1a5c38', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', padding: 0 }}
+                        style={{ background: fetchingLocation ? '#e2e8f0' : 'linear-gradient(135deg, #1a5c38, #2d8a56)', border: 'none', color: '#fff', fontSize: '0.78rem', fontWeight: 700, cursor: fetchingLocation ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.75rem', borderRadius: '8px' }}
                       >
-                        {fetchingLocation ? '⌛ Mendeteksi...' : '📍 Perbarui GPS'}
+                        {fetchingLocation ? '⌛ Mendeteksi alamat...' : '🔄 Perbarui Lokasi'}
                       </button>
                     </label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      style={{ paddingLeft: '1rem', background: '#f8faf9', color: '#5a5a6e' }} 
-                      value={lokasi} 
-                      readOnly 
-                      placeholder={fetchingLocation ? 'Mendeteksi lokasi GPS...' : 'Koordinat GPS Anda'} 
+                    <textarea
+                      className="form-input"
+                      style={{ paddingLeft: '1rem', background: '#f8faf9', color: lokasi ? '#0f3d24' : '#8a8a9e', resize: 'none', minHeight: '70px', lineHeight: 1.5, fontSize: '0.88rem', fontWeight: lokasi ? 600 : 400 }}
+                      value={lokasi}
+                      readOnly
+                      rows={3}
+                      placeholder={fetchingLocation ? '⏳ Sedang mendeteksi alamat dari GPS, mohon tunggu...' : 'Lokasi akan terisi otomatis dari GPS (jalan, kelurahan, kecamatan, kota, provinsi)'}
                     />
+                    {lokasi && (
+                      <div style={{ fontSize: '0.75rem', color: '#1a5c38', marginTop: '0.3rem', fontWeight: 600 }}>
+                        ✅ Lokasi terdeteksi
+                      </div>
+                    )}
                   </div>
                   <div className="form-group">
                     <label className="form-label">Foto Selfie</label>
@@ -725,6 +823,126 @@ function UserDashboard() {
                       <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Belum ada log aktivitas di sesi ini</div>
                     )}
                   </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ======= SERTIFIKAT (USER) ======= */}
+          {activeMenu === 'sertifikat' && (
+            <div className="dashboard-home">
+              <div className="dash-table-card" style={{ padding: '2rem', maxWidth: '700px' }}>
+                <h3 style={{ color: '#0f3d24', fontSize: '1.2rem', marginBottom: '0.5rem' }}>🏆 Sertifikat PKL</h3>
+                <p style={{ color: '#5a5a6e', fontSize: '0.88rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+                  Ajukan permintaan sertifikat PKL kepada admin setelah masa PKL selesai. Admin akan memverifikasi dan mengirimkan file PDF sertifikat Anda.
+                </p>
+
+                {sertifikatMsg.text && (
+                  <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', borderRadius: '12px', fontSize: '0.85rem', background: sertifikatMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${sertifikatMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: sertifikatMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
+                    {sertifikatMsg.text}
+                  </div>
+                )}
+
+                {loadingSertifikat ? (
+                  <div style={{ textAlign: 'center', color: '#8a8a9e', padding: '2rem' }}>Memuat data sertifikat...</div>
+                ) : (
+                  <>
+                    {/* No request yet */}
+                    {sertifikatList.length === 0 && (
+                      <div>
+                        <div style={{ textAlign: 'center', padding: '1.5rem 0', color: '#5a5a6e' }}>
+                          <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>📜</div>
+                          <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem' }}>Anda belum mengajukan permintaan sertifikat.</p>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '1rem' }}>
+                          <label className="form-label">Catatan (opsional)</label>
+                          <textarea
+                            value={catatanRequest}
+                            onChange={e => setCatatanRequest(e.target.value)}
+                            placeholder="Tambahkan catatan untuk admin (opsional)..."
+                            rows={3}
+                            style={{ width: '100%', padding: '0.75rem', border: '1.5px solid #e2e8f0', borderRadius: '10px', fontSize: '0.88rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        <button
+                          onClick={handleRequestSertifikat}
+                          disabled={submittingRequest}
+                          style={{ width: '100%', padding: '0.85rem', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer' }}
+                        >
+                          {submittingRequest ? '⌛ Mengirim permintaan...' : '📨 Ajukan Permintaan Sertifikat'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Has request(s) */}
+                    {sertifikatList.map(s => (
+                      <div key={s.id_sertifikat} style={{ border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '1.5rem', marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#0f3d24', fontSize: '1rem' }}>Permintaan Sertifikat</div>
+                            <div style={{ fontSize: '0.8rem', color: '#8a8a9e' }}>Tanggal Request: {formatDateStr(s.tanggal_request)}</div>
+                          </div>
+                          <span style={{
+                            padding: '0.35rem 0.9rem',
+                            borderRadius: '20px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            background: s.status === 'diberikan' ? '#d1fae5' : s.status === 'ditolak' ? '#fee2e2' : '#fef3c7',
+                            color: s.status === 'diberikan' ? '#065f46' : s.status === 'ditolak' ? '#dc2626' : '#d97706',
+                          }}>
+                            {s.status === 'pending' ? '⏳ Menunggu' : s.status === 'diberikan' ? '✅ Diberikan' : '❌ Ditolak'}
+                          </span>
+                        </div>
+
+                        {s.catatan && (
+                          <div style={{ background: '#f8faf9', borderRadius: '10px', padding: '0.75rem', fontSize: '0.85rem', color: '#5a5a6e', marginBottom: '0.75rem' }}>
+                            <strong>Catatan:</strong> {s.catatan}
+                          </div>
+                        )}
+
+                        {s.status === 'pending' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#d97706', background: '#fef3c7', padding: '0.6rem 1rem', borderRadius: '10px' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Permintaan Anda sedang diproses oleh admin. Harap tunggu.
+                          </div>
+                        )}
+
+                        {s.status === 'ditolak' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#dc2626', background: '#fee2e2', padding: '0.6rem 1rem', borderRadius: '10px' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                            Permintaan sertifikat Anda ditolak. Silakan hubungi admin untuk informasi lebih lanjut.
+                          </div>
+                        )}
+
+                        {s.status === 'diberikan' && s.file_sertifikat && (
+                          <div style={{ marginTop: '0.75rem' }}>
+                            <div style={{ fontSize: '0.85rem', color: '#065f46', marginBottom: '0.75rem', fontWeight: 600 }}>
+                              🎉 Sertifikat PKL Anda sudah siap! {s.tanggal_diberikan && `(Diberikan: ${formatDateStr(s.tanggal_diberikan)})`}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                              <a
+                                href={`http://localhost:8080/uploads/${s.file_sertifikat}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.2rem', background: '#dbeafe', color: '#1d4ed8', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                Lihat Sertifikat
+                              </a>
+                              <a
+                                href={`http://localhost:8080/uploads/${s.file_sertifikat}`}
+                                download
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.2rem', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Download PDF
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             </div>

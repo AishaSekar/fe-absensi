@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Chart from 'react-apexcharts';
 import api from '../../config/api';
@@ -48,6 +48,19 @@ interface AbsensiRecord {
   peserta?: { nim_nis: string; user?: { nama: string } };
 }
 
+interface SertifikatRecord {
+  id_sertifikat: number;
+  id_peserta: number;
+  id_user: number;
+  status: 'pending' | 'diberikan' | 'ditolak';
+  file_sertifikat?: string;
+  catatan?: string;
+  tanggal_request: string;
+  tanggal_diberikan?: string;
+  peserta?: { nim_nis: string; user?: { nama: string } };
+  user?: { nama: string; email: string };
+}
+
 function AdminDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -69,6 +82,16 @@ function AdminDashboard() {
   const [absensiList, setAbsensiList] = useState<AbsensiRecord[]>([]);
   const [loadingAbsensi, setLoadingAbsensi] = useState(false);
 
+  // Sertifikat
+  const [sertifikatList, setSertifikatList] = useState<SertifikatRecord[]>([]);
+  const [loadingSertifikat, setLoadingSertifikat] = useState(false);
+  const [sertifikatMsg, setSertifikatMsg] = useState({ type: '', text: '' });
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState<number | null>(null);
+  const [fileSertifikat, setFileSertifikat] = useState<File | null>(null);
+  const [catatanAdmin, setCatatanAdmin] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (stored) setUser(JSON.parse(stored));
@@ -79,6 +102,7 @@ function AdminDashboard() {
     if (activeMenu === 'peserta') fetchPeserta();
     if (activeMenu === 'pendaftaran') fetchPeserta();
     if (activeMenu === 'absensi') fetchAbsensi();
+    if (activeMenu === 'sertifikat') fetchSertifikat();
   }, [activeMenu]);
 
   const fetchStats = async () => {
@@ -123,6 +147,50 @@ function AdminDashboard() {
       setAbsensiList(res.data.data || []);
     } catch { setAbsensiList([]); }
     finally { setLoadingAbsensi(false); }
+  };
+
+  const fetchSertifikat = async () => {
+    setLoadingSertifikat(true);
+    try {
+      const res = await api.get('/sertifikat');
+      setSertifikatList(res.data.data || []);
+    } catch { setSertifikatList([]); }
+    finally { setLoadingSertifikat(false); }
+  };
+
+  const handleKirimSertifikat = async (id: number) => {
+    if (!fileSertifikat) { setSertifikatMsg({ type: 'error', text: 'Pilih file PDF sertifikat terlebih dahulu!' }); return; }
+    setUploadingId(id);
+    setSertifikatMsg({ type: '', text: '' });
+    try {
+      const fd = new FormData();
+      fd.append('status', 'diberikan');
+      fd.append('file_sertifikat', fileSertifikat);
+      if (catatanAdmin.trim()) fd.append('catatan', catatanAdmin.trim());
+      await api.post(`/sertifikat/${id}/verifikasi`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setSertifikatMsg({ type: 'success', text: 'Sertifikat berhasil dikirim ke peserta!' });
+      setShowUploadModal(null);
+      setFileSertifikat(null);
+      setCatatanAdmin('');
+      fetchSertifikat();
+    } catch (err: any) {
+      setSertifikatMsg({ type: 'error', text: err.response?.data?.message || 'Gagal mengirim sertifikat.' });
+    } finally { setUploadingId(null); }
+  };
+
+  const handleTolakSertifikat = async (id: number) => {
+    if (!confirm('Yakin ingin menolak permintaan sertifikat ini?')) return;
+    setUploadingId(id);
+    setSertifikatMsg({ type: '', text: '' });
+    try {
+      const fd = new FormData();
+      fd.append('status', 'ditolak');
+      await api.post(`/sertifikat/${id}/verifikasi`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setSertifikatMsg({ type: 'success', text: 'Permintaan sertifikat ditolak.' });
+      fetchSertifikat();
+    } catch (err: any) {
+      setSertifikatMsg({ type: 'error', text: err.response?.data?.message || 'Gagal menolak permintaan.' });
+    } finally { setUploadingId(null); }
   };
 
   const handleDeletePeserta = async (id: number) => {
@@ -213,6 +281,7 @@ function AdminDashboard() {
     { id: 'absensi', label: 'Data Absensi', icon: 'clock' },
     { id: 'pendaftaran', label: 'Pendaftaran', icon: 'file' },
     { id: 'laporan', label: 'Laporan', icon: 'file' },
+    { id: 'sertifikat', label: 'Sertifikat', icon: 'award' },
   ];
 
   const getIcon = (icon: string) => {
@@ -221,6 +290,7 @@ function AdminDashboard() {
       users: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>,
       clock: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
       file: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
+      award: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>,
     };
     return icons[icon] || null;
   };
@@ -230,6 +300,7 @@ function AdminDashboard() {
     if (activeMenu === 'absensi') return 'Data Absensi';
     if (activeMenu === 'pendaftaran') return 'Verifikasi Pendaftaran';
     if (activeMenu === 'laporan') return 'Laporan Absensi';
+    if (activeMenu === 'sertifikat') return 'Manajemen Sertifikat';
     return 'Dashboard Admin';
   };
 
@@ -563,6 +634,141 @@ function AdminDashboard() {
           )}
 
           {activeMenu === 'laporan' && <LaporanAbsensi />}
+
+          {/* ======= SERTIFIKAT (ADMIN) ======= */}
+          {activeMenu === 'sertifikat' && (
+            <div className="dashboard-home">
+              {sertifikatMsg.text && (
+                <div className={`dashboard-alert dashboard-alert-${sertifikatMsg.type}`} style={{ marginBottom: '1rem' }}>{sertifikatMsg.text}</div>
+              )}
+
+              {/* Upload Modal */}
+              {showUploadModal !== null && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                  <div style={{ background: '#fff', borderRadius: '20px', padding: '2rem', width: '100%', maxWidth: '480px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+                    <h3 style={{ color: '#0f3d24', marginBottom: '1.5rem', fontSize: '1.1rem', fontWeight: 700 }}>📄 Kirim Sertifikat PDF</h3>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label className="form-label">File Sertifikat (PDF) *</label>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="application/pdf"
+                        onChange={e => setFileSertifikat(e.target.files?.[0] || null)}
+                        style={{ display: 'block', width: '100%', fontSize: '0.88rem', padding: '0.5rem', border: '1.5px solid #e2e8f0', borderRadius: '8px' }}
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                      <label className="form-label">Catatan (opsional)</label>
+                      <textarea
+                        value={catatanAdmin}
+                        onChange={e => setCatatanAdmin(e.target.value)}
+                        placeholder="Catatan untuk peserta..."
+                        rows={3}
+                        style={{ width: '100%', padding: '0.75rem', border: '1.5px solid #e2e8f0', borderRadius: '10px', fontSize: '0.88rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => { setShowUploadModal(null); setFileSertifikat(null); setCatatanAdmin(''); setSertifikatMsg({ type: '', text: '' }); }}
+                        style={{ padding: '0.6rem 1.2rem', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#5a5a6e' }}
+                      >Batal</button>
+                      <button
+                        onClick={() => handleKirimSertifikat(showUploadModal)}
+                        disabled={uploadingId === showUploadModal}
+                        style={{ padding: '0.6rem 1.4rem', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                      >
+                        {uploadingId === showUploadModal ? '⌛ Mengirim...' : '📤 Kirim Sertifikat'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="dash-table-card">
+                <div className="dash-table-header">
+                  <h3>Permintaan Sertifikat ({sertifikatList.length})</h3>
+                  <button
+                    onClick={fetchSertifikat}
+                    style={{ background: 'none', border: '1.5px solid #1a5c38', color: '#1a5c38', borderRadius: '8px', padding: '0.35rem 0.9rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
+                  >🔄 Refresh</button>
+                </div>
+                <div className="dash-table-wrapper">
+                  {loadingSertifikat ? (
+                    <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
+                  ) : (
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>No</th>
+                          <th>Nama Peserta</th>
+                          <th>NIM/NIS</th>
+                          <th>Tanggal Request</th>
+                          <th>Catatan</th>
+                          <th>Status</th>
+                          <th>File</th>
+                          <th>Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sertifikatList.map((s, i) => (
+                          <tr key={s.id_sertifikat}>
+                            <td>{i + 1}</td>
+                            <td style={{ fontWeight: 600 }}>{s.peserta?.user?.nama || s.user?.nama || '-'}</td>
+                            <td>{s.peserta?.nim_nis || '-'}</td>
+                            <td>{formatDateStr(s.tanggal_request)}</td>
+                            <td style={{ maxWidth: '180px', fontSize: '0.82rem', color: '#5a5a6e' }}>{s.catatan || '-'}</td>
+                            <td>
+                              <span className={`status-badge status-${s.status}`} style={{
+                                background: s.status === 'diberikan' ? '#d1fae5' : s.status === 'ditolak' ? '#fee2e2' : '#fef3c7',
+                                color: s.status === 'diberikan' ? '#065f46' : s.status === 'ditolak' ? '#dc2626' : '#d97706',
+                              }}>{s.status}</span>
+                            </td>
+                            <td>
+                              {s.file_sertifikat ? (
+                                <a
+                                  href={`http://localhost:8080/uploads/${s.file_sertifikat}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="status-badge"
+                                  style={{ background: '#dbeafe', color: '#1d4ed8', textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600 }}
+                                >📥 Lihat PDF</a>
+                              ) : <span style={{ color: '#8a8a9e', fontSize: '0.8rem' }}>-</span>}
+                            </td>
+                            <td>
+                              {s.status === 'pending' && (
+                                <div className="table-actions">
+                                  <button
+                                    onClick={() => { setSertifikatMsg({ type: '', text: '' }); setShowUploadModal(s.id_sertifikat); setFileSertifikat(null); setCatatanAdmin(''); }}
+                                    className="btn-action-accept"
+                                    title="Kirim Sertifikat PDF"
+                                    disabled={uploadingId === s.id_sertifikat}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleTolakSertifikat(s.id_sertifikat)}
+                                    className="btn-action-reject"
+                                    title="Tolak Permintaan"
+                                    disabled={uploadingId === s.id_sertifikat}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
+                                </div>
+                              )}
+                              {s.status !== 'pending' && <span style={{ color: '#8a8a9e', fontSize: '0.8rem' }}>Selesai</span>}
+                            </td>
+                          </tr>
+                        ))}
+                        {sertifikatList.length === 0 && (
+                          <tr><td colSpan={8} style={{ textAlign: 'center', color: '#8a8a9e', padding: '2rem' }}>Belum ada permintaan sertifikat</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
