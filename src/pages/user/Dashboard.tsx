@@ -95,6 +95,7 @@ function UserDashboard() {
   const [foto, setFoto] = useState<File | null>(null);
   const [submittingAbsen, setSubmittingAbsen] = useState(false);
   const [fetchingLocation, setFetchingLocation] = useState(false);
+  const [jadwal, setJadwal] = useState<{ jam_masuk: string; jam_pulang: string } | null>(null);
 
   // Pendaftaran states
   const [pendaftaranList, setPendaftaranList] = useState<PendaftaranRecord[]>([]);
@@ -159,11 +160,23 @@ function UserDashboard() {
     }
   }, [activeMenu]);
 
+  const fetchJadwal = async () => {
+    try {
+      const res = await api.get('/jadwal');
+      if (res.data?.data) {
+        setJadwal(res.data.data);
+      }
+    } catch (err) {
+      console.error('Gagal memuat jadwal:', err);
+    }
+  };
+
   useEffect(() => {
     if (activeMenu === 'riwayat' || activeMenu === 'dashboard') fetchAbsensiHistory();
     if (activeMenu === 'aktivitas' || activeMenu === 'dashboard') fetchActivityLogs();
     if (activeMenu === 'absensi') {
       getLocationGPS();
+      fetchJadwal();
     }
     if (activeMenu === 'sertifikat') fetchSertifikat();
   }, [activeMenu]);
@@ -718,6 +731,14 @@ function UserDashboard() {
             <div className="dashboard-home">
               <div className="dash-table-card" style={{ padding: '2rem' }}>
                 <h3 style={{ marginBottom: '1.5rem', color: '#0f3d24', fontSize: '1.2rem' }}>Form Absensi</h3>
+                {jadwal && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '0.8rem 1.2rem', marginBottom: '1.5rem', fontSize: '0.88rem', color: '#16a34a', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>
+                      Jadwal Absensi: Absen Masuk sebelum <strong>{jadwal.jam_masuk}</strong> | Absen Pulang setelah <strong>{jadwal.jam_pulang}</strong>
+                    </span>
+                  </div>
+                )}
                 {absenMsg.text && (
                   <div className={`auth-${absenMsg.type} animate-fade-in`} style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', borderRadius: '12px', fontSize: '0.85rem', background: absenMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${absenMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: absenMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
                     <span>{absenMsg.text}</span>

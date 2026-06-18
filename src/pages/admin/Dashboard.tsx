@@ -92,6 +92,13 @@ function AdminDashboard() {
   const [catatanAdmin, setCatatanAdmin] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Pengaturan Jadwal
+  const [jamMasuk, setJamMasuk] = useState('08:00');
+  const [jamPulang, setJamPulang] = useState('17:00');
+  const [loadingJadwal, setLoadingJadwal] = useState(false);
+  const [savingJadwal, setSavingJadwal] = useState(false);
+  const [jadwalMsg, setJadwalMsg] = useState({ type: '', text: '' });
+
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (stored) setUser(JSON.parse(stored));
@@ -103,7 +110,48 @@ function AdminDashboard() {
     if (activeMenu === 'pendaftaran') fetchPeserta();
     if (activeMenu === 'absensi') fetchAbsensi();
     if (activeMenu === 'sertifikat') fetchSertifikat();
+    if (activeMenu === 'jadwal') fetchJadwal();
   }, [activeMenu]);
+
+  const fetchJadwal = async () => {
+    setLoadingJadwal(true);
+    setJadwalMsg({ type: '', text: '' });
+    try {
+      const res = await api.get('/jadwal');
+      if (res.data?.data) {
+        setJamMasuk(res.data.data.jam_masuk);
+        setJamPulang(res.data.data.jam_pulang);
+      }
+    } catch (err: any) {
+      console.error('Gagal memuat jadwal:', err);
+    } finally {
+      setLoadingJadwal(false);
+    }
+  };
+
+  const handleUpdateJadwal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingJadwal(true);
+    setJadwalMsg({ type: '', text: '' });
+    try {
+      const res = await api.put('/admin/jadwal', {
+        jam_masuk: jamMasuk,
+        jam_pulang: jamPulang,
+      });
+      setJadwalMsg({ type: 'success', text: 'Jadwal absensi berhasil diperbarui.' });
+      if (res.data?.data) {
+        setJamMasuk(res.data.data.jam_masuk);
+        setJamPulang(res.data.data.jam_pulang);
+      }
+    } catch (err: any) {
+      setJadwalMsg({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal memperbarui jadwal absensi.',
+      });
+    } finally {
+      setSavingJadwal(false);
+    }
+  };
 
   const fetchStats = async () => {
     setLoadingStats(true);
@@ -282,6 +330,7 @@ function AdminDashboard() {
     { id: 'pendaftaran', label: 'Pendaftaran', icon: 'file' },
     { id: 'laporan', label: 'Laporan', icon: 'file' },
     { id: 'sertifikat', label: 'Sertifikat', icon: 'award' },
+    { id: 'jadwal', label: 'Pengaturan Jadwal', icon: 'settings' },
   ];
 
   const getIcon = (icon: string) => {
@@ -291,6 +340,7 @@ function AdminDashboard() {
       clock: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
       file: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
       award: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>,
+      settings: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 005 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
     };
     return icons[icon] || null;
   };
@@ -301,6 +351,7 @@ function AdminDashboard() {
     if (activeMenu === 'pendaftaran') return 'Verifikasi Pendaftaran';
     if (activeMenu === 'laporan') return 'Laporan Absensi';
     if (activeMenu === 'sertifikat') return 'Manajemen Sertifikat';
+    if (activeMenu === 'jadwal') return 'Pengaturan Jadwal Absensi';
     return 'Dashboard Admin';
   };
 
@@ -766,6 +817,81 @@ function AdminDashboard() {
                     </table>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======= PENGATURAN JADWAL ======= */}
+          {activeMenu === 'jadwal' && (
+            <div className="dashboard-home">
+              <div className="dash-table-card" style={{ maxWidth: '600px', margin: '0 auto', padding: '2.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+                  <div className="dash-stat-icon" style={{ background: '#ecfdf5', color: '#10b981', margin: 0, padding: '10px', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '12px' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 005 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                  </div>
+                  <div>
+                    <h3 style={{ color: '#0f3d24', fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>Pengaturan Jadwal Absensi</h3>
+                    <p style={{ color: '#5a5a6e', fontSize: '0.88rem', margin: '4px 0 0 0' }}>Atur batasan jam absen masuk dan jam absen pulang untuk peserta PKL.</p>
+                  </div>
+                </div>
+
+                {jadwalMsg.text && (
+                  <div className={`auth-${jadwalMsg.type} animate-fade-in`} style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.8rem 1.2rem', borderRadius: '12px', fontSize: '0.88rem', background: jadwalMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${jadwalMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: jadwalMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
+                    <span>{jadwalMsg.text}</span>
+                  </div>
+                )}
+
+                {loadingJadwal ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: '#8a8a9e', fontWeight: 600 }}>Memuat jadwal...</div>
+                ) : (
+                  <form onSubmit={handleUpdateJadwal} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Jam Masuk (Batas Telat)</label>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={jamMasuk}
+                        onChange={(e) => setJamMasuk(e.target.value)}
+                        required
+                        style={{ padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid #d1d5db', fontSize: '1rem', width: '100%', boxSizing: 'border-box' }}
+                      />
+                      <small style={{ color: '#8a8a9e', display: 'block', marginTop: '4px' }}>Peserta yang absen masuk setelah jam ini akan otomatis berstatus <strong>Telat</strong>.</small>
+                    </div>
+
+                    <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Jam Pulang (Minimal Absen Pulang)</label>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={jamPulang}
+                        onChange={(e) => setJamPulang(e.target.value)}
+                        required
+                        style={{ padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid #d1d5db', fontSize: '1rem', width: '100%', boxSizing: 'border-box' }}
+                      />
+                      <small style={{ color: '#8a8a9e', display: 'block', marginTop: '4px' }}>Peserta tidak diizinkan melakukan absen pulang sebelum jam yang ditentukan.</small>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingJadwal}
+                      style={{
+                        background: '#1a5c38',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '1rem',
+                        borderRadius: '12px',
+                        fontWeight: 700,
+                        fontSize: '1rem',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s',
+                        marginTop: '1rem',
+                        boxShadow: '0 4px 12px rgba(26,92,56,0.15)',
+                      }}
+                    >
+                      {savingJadwal ? 'Menyimpan...' : 'Simpan Perubahan'}
+                    </button>
+                  </form>
+                )}
               </div>
             </div>
           )}
