@@ -45,6 +45,7 @@ interface AbsensiRecord {
   jam_pulang?: string;
   status: string;
   lokasi?: string;
+  foto?: string;
   peserta?: { nim_nis: string; user?: { nama: string } };
 }
 
@@ -91,6 +92,9 @@ function AdminDashboard() {
   const [fileSertifikat, setFileSertifikat] = useState<File | null>(null);
   const [catatanAdmin, setCatatanAdmin] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Foto absensi preview
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
 
   // Pengaturan Jadwal
   const [jamMasuk, setJamMasuk] = useState('08:00');
@@ -321,7 +325,17 @@ function AdminDashboard() {
   };
 
   const formatDateStr = (s: string) => { try { return new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
-  const formatTimeStr = (s?: string) => { if (!s) return '-'; try { const d = new Date(s); return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }); } catch { return s; } };
+  const formatTimeStr = (s?: string) => {
+    if (!s) return '-';
+    // Jika format sudah HH:MM atau HH:MM:SS langsung tampilkan tanpa parsing Date
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s.trim())) {
+      const parts = s.trim().split(':');
+      const hh = parts[0].padStart(2, '0');
+      const mm = parts[1].padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+    try { const d = new Date(s); if (isNaN(d.getTime())) return s; return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }); } catch { return s; }
+  };
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
@@ -653,6 +667,38 @@ function AdminDashboard() {
           {/* ======= DATA ABSENSI ======= */}
           {activeMenu === 'absensi' && (
             <div className="dashboard-home">
+              {/* Modal Foto Preview */}
+              {fotoPreview && (
+                <div
+                  onClick={() => setFotoPreview(null)}
+                  style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 2000, cursor: 'zoom-out',
+                  }}
+                >
+                  <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+                    <img
+                      src={fotoPreview}
+                      alt="Foto Absensi"
+                      style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)', display: 'block' }}
+                    />
+                    <button
+                      onClick={() => setFotoPreview(null)}
+                      style={{
+                        position: 'absolute', top: '-14px', right: '-14px',
+                        background: '#ef4444', color: '#fff', border: 'none',
+                        borderRadius: '50%', width: '32px', height: '32px',
+                        cursor: 'pointer', fontSize: '1.1rem', fontWeight: 700,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                      }}
+                      aria-label="Tutup"
+                    >✕</button>
+                  </div>
+                </div>
+              )}
+
               <div className="dash-table-card">
                 <div className="dash-table-header">
                   <h3>Data Absensi Seluruh Peserta</h3>
@@ -662,7 +708,7 @@ function AdminDashboard() {
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Nama</th><th>Tanggal</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Lokasi</th></tr></thead>
+                      <thead><tr><th>No</th><th>Nama</th><th>Tanggal</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Lokasi</th><th>Foto</th></tr></thead>
                       <tbody>
                         {absensiList.map((a, i) => (
                           <tr key={a.id_absensi}>
@@ -673,9 +719,28 @@ function AdminDashboard() {
                             <td>{formatTimeStr(a.jam_pulang)}</td>
                             <td><span className={`status-badge status-${a.status.replace(' ', '-')}`}>{a.status}</span></td>
                             <td>{a.lokasi || '-'}</td>
+                            <td>
+                              {a.foto ? (
+                                <img
+                                  src={`http://localhost:8080/uploads/${a.foto}`}
+                                  alt="Foto Absensi"
+                                  onClick={() => setFotoPreview(`http://localhost:8080/uploads/${a.foto}`)}
+                                  style={{
+                                    width: '42px', height: '42px', objectFit: 'cover',
+                                    borderRadius: '8px', cursor: 'zoom-in',
+                                    border: '2px solid #e2e8f0',
+                                    transition: 'transform 0.15s, box-shadow 0.15s',
+                                  }}
+                                  onMouseEnter={e => { (e.target as HTMLImageElement).style.transform = 'scale(1.12)'; (e.target as HTMLImageElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'; }}
+                                  onMouseLeave={e => { (e.target as HTMLImageElement).style.transform = 'scale(1)'; (e.target as HTMLImageElement).style.boxShadow = 'none'; }}
+                                />
+                              ) : (
+                                <span style={{ color: '#c4c4d4', fontSize: '0.78rem' }}>—</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
-                        {absensiList.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data absensi</td></tr>}
+                        {absensiList.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data absensi</td></tr>}
                       </tbody>
                     </table>
                   )}

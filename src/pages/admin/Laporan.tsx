@@ -5,7 +5,7 @@ import {
   FileSpreadsheet,
   FileText,
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import api from "../../config/api";
@@ -65,6 +65,13 @@ function formatDate(value: string) {
 
 function formatTimeStr(value?: string) {
   if (!value) return "-";
+  // Jika format sudah HH:MM atau HH:MM:SS, tampilkan langsung tanpa parsing Date
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(value.trim())) {
+    const parts = value.trim().split(":");
+    const hh = parts[0].padStart(2, "0");
+    const mm = parts[1].padStart(2, "0");
+    return `${hh}:${mm}`;
+  }
   try {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
@@ -299,20 +306,81 @@ export default function LaporanAbsensi() {
   }, [tableRows]);
 
   const exportExcel = () => {
-    const data = tableRows.map((item, i) => ({
-      No: i + 1,
-      Nama: item.name,
-      "NIM/NIS": item.number,
-      Institusi: item.institution,
-      Hadir: item.present,
-      Telat: item.late,
-      Alpha: item.absent,
-      Persentase: `${item.percentage.toFixed(1)}%`,
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(data);
+    const headers = ["No", "Nama", "NIM/NIS", "Institusi", "Hadir", "Telat", "Alpha", "Persentase"];
+    const rows = tableRows.map((item, i) => [
+      i + 1,
+      item.name,
+      item.number,
+      item.institution,
+      item.present,
+      item.late,
+      item.absent,
+      `${item.percentage.toFixed(1)}%`,
+    ]);
+
+    const wsData = [headers, ...rows];
+
+    // Baris judul di atas tabel
+    const sheetData = [
+      [`Laporan Kehadiran PKL`],
+      [`Periode: ${formatDate(startDate)} s/d ${formatDate(endDate)}    Institusi: ${institution}`],
+      [],
+      ...wsData,
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+    // Lebar kolom
+    worksheet['!cols'] = [
+      { wch: 5 },  // No
+      { wch: 28 }, // Nama
+      { wch: 15 }, // NIM/NIS
+      { wch: 22 }, // Institusi
+      { wch: 8 },  // Hadir
+      { wch: 8 },  // Telat
+      { wch: 8 },  // Alpha
+      { wch: 13 }, // Persentase
+    ];
+
+    // Border hitam tipis seperti referensi
+    const thin = { style: 'thin', color: { rgb: '000000' } };
+    const allBorders = { top: thin, bottom: thin, left: thin, right: thin };
+
+    const dataOffset = 3; // 2 baris judul + 1 baris kosong
+    const totalDataRows = wsData.length;
+    const totalCols = headers.length;
+
+    for (let r = 0; r < totalDataRows; r++) {
+      const isHeader = r === 0;
+      for (let c = 0; c < totalCols; c++) {
+        const ref = XLSX.utils.encode_cell({ r: r + dataOffset, c });
+        if (!worksheet[ref]) worksheet[ref] = { v: '', t: 's' };
+        const isNumeric = c === 0 || c >= 4;
+        worksheet[ref].s = {
+          border: allBorders,
+          fill: isHeader
+            ? { patternType: 'solid', fgColor: { rgb: '4472C4' } }
+            : { patternType: 'none' },
+          font: isHeader
+            ? { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Calibri' }
+            : { sz: 11, name: 'Calibri', color: { rgb: '000000' } },
+          alignment: {
+            horizontal: (isHeader || isNumeric) ? 'center' : 'left',
+            vertical: 'center',
+          },
+        };
+      }
+    }
+
+    // Style baris judul
+    const c1 = worksheet['A1'];
+    if (c1) c1.s = { font: { bold: true, sz: 13, name: 'Calibri', color: { rgb: '000000' } } };
+    const c2 = worksheet['A2'];
+    if (c2) c2.s = { font: { sz: 10, name: 'Calibri', color: { rgb: '595959' } } };
+
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Absensi");
-    XLSX.writeFile(workbook, "Laporan_Absensi.xlsx");
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Laporan Absensi');
+    XLSX.writeFile(workbook, 'Laporan_Absensi.xlsx', { bookType: 'xlsx', cellStyles: true });
   };
 
   const exportPdf = () => {
@@ -431,39 +499,7 @@ export default function LaporanAbsensi() {
           {!loading && errorMessage && <p className="laporan-message error">{errorMessage}</p>}
         </section>
 
-        {/* Summary Stats */}
-        {!loading && !errorMessage && (
-          <section className="panel summary-panel">
-            <h2>Ringkasan Laporan</h2>
-            <div className="summary-grid">
-              <StatCard label="Total Peserta Aktif" value={totals.active} />
-              <StatCard
-                label="Total Hadir"
-                value={totals.present}
-                variant="success"
-              />
-              <StatCard
-                label="Total Telat"
-                value={totals.late}
-                variant="soft"
-              />
-              <StatCard
-                label="Total Alpha"
-                value={totals.absent}
-                variant="soft"
-              />
-              <StatCard
-                label="Persentase Kehadiran"
-                value={`${totals.percentage.toFixed(1)}%`}
-              />
-              <StatCard
-                label="Periode"
-                value={`${formatDate(startDate)} – ${formatDate(endDate)}`}
-                variant="neutral"
-              />
-            </div>
-          </section>
-        )}
+
 
         {/* Rekap per Peserta */}
         {!loading && !errorMessage && (
