@@ -5,7 +5,7 @@ import '../css/AuthPages.css';
 
 function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [nimNis, setNimNis] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -17,7 +17,7 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await api.post('/login', { email, password });
+      const res = await api.post('/login', { nim_nis: nimNis.trim(), password });
       const { token, user } = res.data.data;
 
       // Store credentials BEFORE navigating so interceptors have the token
@@ -28,7 +28,7 @@ function LoginPage() {
       const destination = user.role === 'admin' ? '/admin/dashboard' : '/dashboard';
       navigate(destination, { replace: true });
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Login gagal. Periksa email dan password Anda.';
+      const msg = err.response?.data?.message || 'Login gagal. Periksa NIM/NIS dan password Anda.';
       setError(msg);
     } finally {
       setLoading(false);
@@ -68,21 +68,21 @@ function LoginPage() {
         {/* Form */}
         <form onSubmit={handleLogin} className="auth-form">
           <div className="form-group">
-            <label htmlFor="email" className="form-label">Email</label>
+            <label htmlFor="nimNis" className="form-label">NIM / NIS</label>
             <div className="input-wrapper">
               <svg className="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="2" y="4" width="20" height="16" rx="2" />
-                <path d="M22 7l-8.97 5.7a1.94 1.94 0 01-2.06 0L2 7" />
+                <path d="M20 21a8 8 0 10-16 0" />
+                <circle cx="12" cy="8" r="5" />
               </svg>
               <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="email@example.com"
+                id="nimNis"
+                type="text"
+                value={nimNis}
+                onChange={(e) => setNimNis(e.target.value)}
+                placeholder="Masukkan NIM/NIS"
                 className="form-input"
                 required
-                autoComplete="email"
+                autoComplete="username"
               />
             </div>
           </div>

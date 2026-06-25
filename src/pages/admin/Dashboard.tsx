@@ -576,13 +576,14 @@ function AdminDashboard() {
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Nama</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>No HP</th><th>Berkas</th><th>Status</th><th>Aksi</th></tr></thead>
+                      <thead><tr><th>No</th><th>Nama</th><th>NIM/NIS</th><th>Divisi</th><th>Asal Instansi</th><th>Jurusan</th><th>No HP</th><th>Berkas</th><th>Status</th><th>Aksi</th></tr></thead>
                       <tbody>
                         {pesertaList.map((p, i) => (
                           <tr key={p.id_peserta}>
                             <td>{i + 1}</td>
                             <td style={{ fontWeight: 600 }}>{p.user?.nama || '-'}</td>
                             <td>{p.nim_nis}</td>
+                            <td>{p.divisi || p.pendaftaran?.divisi || '-'}</td>
                             <td>{p.asal_instansi}</td>
                             <td>{p.jurusan}</td>
                             <td>{p.no_hp || '-'}</td>
@@ -607,7 +608,7 @@ function AdminDashboard() {
                             </td>
                           </tr>
                         ))}
-                        {pesertaList.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data peserta</td></tr>}
+                        {pesertaList.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data peserta</td></tr>}
                       </tbody>
                     </table>
                   )}
@@ -631,7 +632,7 @@ function AdminDashboard() {
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Nama</th><th>Email</th><th>NIM/NIS</th><th>Asal Instansi</th><th>Jurusan</th><th>Berkas</th><th>Status</th><th>Aksi</th></tr></thead>
+                      <thead><tr><th>No</th><th>Nama</th><th>Email</th><th>NIM/NIS</th><th>Divisi</th><th>Asal Instansi</th><th>Jurusan</th><th>Berkas</th><th>Status</th><th>Aksi</th></tr></thead>
                       <tbody>
                         {pendingPeserta.map((p, i) => (
                           <tr key={p.id_peserta}>
@@ -639,6 +640,7 @@ function AdminDashboard() {
                             <td style={{ fontWeight: 600 }}>{p.user?.nama || '-'}</td>
                             <td>{p.user?.email || '-'}</td>
                             <td>{p.nim_nis}</td>
+                            <td>{p.pendaftaran?.divisi || '-'}</td>
                             <td>{p.asal_instansi}</td>
                             <td>{p.jurusan}</td>
                             <td>{renderBerkasLinks(p)}</td>
@@ -655,7 +657,7 @@ function AdminDashboard() {
                             </td>
                           </tr>
                         ))}
-                        {pendingPeserta.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#8a8a9e' }}>Tidak ada pendaftaran yang menunggu verifikasi</td></tr>}
+                        {pendingPeserta.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#8a8a9e' }}>Tidak ada pendaftaran yang menunggu verifikasi</td></tr>}
                       </tbody>
                     </table>
                   )}
