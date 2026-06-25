@@ -56,6 +56,7 @@ interface SertifikatRecord {
   id_user: number;
   status: 'pending' | 'diberikan' | 'ditolak';
   file_sertifikat?: string;
+  file_berkas?: string[];
   catatan?: string;
   tanggal_request: string;
   tanggal_diberikan?: string;
@@ -82,6 +83,7 @@ function saveLocalActivityLog(log: ActivityLog) {
 function UserDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
+  const [profilPeserta, setProfilPeserta] = useState<{ nim_nis?: string; divisi?: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -129,6 +131,13 @@ function UserDashboard() {
       setUser(parsedUser);
     }
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    // Ambil data profil peserta (NIM/NIS, Divisi)
+    api.get('/profile').then(res => {
+      const d = res.data?.data || {};
+      if (d.nim_nis || d.divisi) {
+        setProfilPeserta({ nim_nis: d.nim_nis, divisi: d.divisi });
+      }
+    }).catch(() => {});
     return () => clearInterval(timer);
   }, []);
 
@@ -178,7 +187,7 @@ function UserDashboard() {
       getLocationGPS();
       fetchJadwal();
     }
-    if (activeMenu === 'sertifikat') fetchSertifikat();
+    if (activeMenu === 'berkas') fetchSertifikat();
   }, [activeMenu]);
 
   const unwrapList = (payload: any) => {
@@ -490,7 +499,7 @@ function UserDashboard() {
     { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
     { id: 'absensi', label: 'Absensi', icon: 'clock' },
     { id: 'riwayat', label: 'Riwayat', icon: 'list' },
-    { id: 'sertifikat', label: 'Sertifikat', icon: 'award' },
+    { id: 'berkas', label: 'Berkas', icon: 'file' },
     { id: 'aktivitas', label: 'Aktivitas', icon: 'activity' },
     { id: 'profil', label: 'Profil', icon: 'user' },
   ];
@@ -518,7 +527,7 @@ function UserDashboard() {
     if (activeMenu === 'riwayat') return 'Riwayat Absensi';
     if (activeMenu === 'aktivitas') return 'Log Aktivitas';
     if (activeMenu === 'profil') return 'Profil Saya';
-    if (activeMenu === 'sertifikat') return 'Sertifikat PKL';
+    if (activeMenu === 'berkas') return 'Berkas PKL';
     return item?.label || 'Dashboard';
   };
 
@@ -849,13 +858,13 @@ function UserDashboard() {
             </div>
           )}
 
-          {/* ======= SERTIFIKAT (USER) ======= */}
-          {activeMenu === 'sertifikat' && (
+          {/* ======= BERKAS (USER) ======= */}
+          {activeMenu === 'berkas' && (
             <div className="dashboard-home">
               <div className="dash-table-card" style={{ padding: '2rem', maxWidth: '700px' }}>
-                <h3 style={{ color: '#0f3d24', fontSize: '1.2rem', marginBottom: '0.5rem' }}>🏆 Sertifikat PKL</h3>
+                <h3 style={{ color: '#0f3d24', fontSize: '1.2rem', marginBottom: '0.5rem' }}>📂 Berkas PKL</h3>
                 <p style={{ color: '#5a5a6e', fontSize: '0.88rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-                  Ajukan permintaan sertifikat PKL kepada admin setelah masa PKL selesai. Admin akan memverifikasi dan mengirimkan file PDF sertifikat Anda.
+                  Ajukan permintaan berkas PKL kepada admin setelah masa PKL selesai. Admin akan memverifikasi dan mengirimkan file PDF berkas Anda.
                 </p>
 
                 {sertifikatMsg.text && (
@@ -890,7 +899,7 @@ function UserDashboard() {
                           disabled={submittingRequest}
                           style={{ width: '100%', padding: '0.85rem', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer' }}
                         >
-                          {submittingRequest ? '⌛ Mengirim permintaan...' : '📨 Ajukan Permintaan Sertifikat'}
+                          {submittingRequest ? '⌛ Mengirim permintaan...' : '📨 Ajukan Permintaan Berkas'}
                         </button>
                       </div>
                     )}
@@ -900,7 +909,7 @@ function UserDashboard() {
                       <div key={s.id_sertifikat} style={{ border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '1.5rem', marginBottom: '1rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                           <div>
-                            <div style={{ fontWeight: 700, color: '#0f3d24', fontSize: '1rem' }}>Permintaan Sertifikat</div>
+                            <div style={{ fontWeight: 700, color: '#0f3d24', fontSize: '1rem' }}>Permintaan Berkas PKL</div>
                             <div style={{ fontSize: '0.8rem', color: '#8a8a9e' }}>Tanggal Request: {formatDateStr(s.tanggal_request)}</div>
                           </div>
                           <span style={{
@@ -935,29 +944,33 @@ function UserDashboard() {
                           </div>
                         )}
 
-                        {s.status === 'diberikan' && s.file_sertifikat && (
+                        {s.status === 'diberikan' && (s.file_berkas?.length || s.file_sertifikat) && (
                           <div style={{ marginTop: '0.75rem' }}>
                             <div style={{ fontSize: '0.85rem', color: '#065f46', marginBottom: '0.75rem', fontWeight: 600 }}>
-                              🎉 Sertifikat PKL Anda sudah siap! {s.tanggal_diberikan && `(Diberikan: ${formatDateStr(s.tanggal_diberikan)})`}
+                              🎉 Berkas PKL Anda sudah siap! {s.tanggal_diberikan && `(Diberikan: ${formatDateStr(s.tanggal_diberikan)})`}
                             </div>
                             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                              <a
-                                href={`http://localhost:8080/uploads/${s.file_sertifikat}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.2rem', background: '#dbeafe', color: '#1d4ed8', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}
-                              >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                                Lihat Sertifikat
-                              </a>
-                              <a
-                                href={`http://localhost:8080/uploads/${s.file_sertifikat}`}
-                                download
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.2rem', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}
-                              >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                Download PDF
-                              </a>
+                              {(s.file_berkas && s.file_berkas.length > 0 ? s.file_berkas : s.file_sertifikat ? [s.file_sertifikat] : []).map((filePath, idx) => (
+                                <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                  <a
+                                    href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/uploads/${filePath}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.2rem', background: '#dbeafe', color: '#1d4ed8', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    Lihat Berkas {(s.file_berkas?.length ?? 0) > 1 ? idx + 1 : ''}
+                                  </a>
+                                  <a
+                                    href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/uploads/${filePath}`}
+                                    download
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.2rem', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Download PDF {(s.file_berkas?.length ?? 0) > 1 ? idx + 1 : ''}
+                                  </a>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -988,6 +1001,8 @@ function UserDashboard() {
                   <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>Role</label><p style={{ fontWeight: 600, color: '#0f3d24', textTransform: 'capitalize' as const }}>{user?.role}</p></div>
                   <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>Nama</label><p style={{ fontWeight: 600, color: '#0f3d24' }}>{user?.nama}</p></div>
                   <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>Email</label><p style={{ fontWeight: 600, color: '#0f3d24' }}>{user?.email}</p></div>
+                  <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>NIS/NIM</label><p style={{ fontWeight: 600, color: '#0f3d24' }}>{profilPeserta?.nim_nis || '-'}</p></div>
+                  <div><label style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 600, textTransform: 'uppercase' as const }}>Divisi / Peminatan</label><p style={{ fontWeight: 600, color: '#0f3d24' }}>{profilPeserta?.divisi || '-'}</p></div>
                 </div>
               </div>
             </div>

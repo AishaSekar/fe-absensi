@@ -55,6 +55,7 @@ interface SertifikatRecord {
   id_user: number;
   status: 'pending' | 'diberikan' | 'ditolak';
   file_sertifikat?: string;
+  file_berkas?: string[];
   catatan?: string;
   tanggal_request: string;
   tanggal_diberikan?: string;
@@ -82,6 +83,10 @@ function AdminDashboard() {
   // Absensi
   const [absensiList, setAbsensiList] = useState<AbsensiRecord[]>([]);
   const [loadingAbsensi, setLoadingAbsensi] = useState(false);
+  const [absensiMsg, setAbsensiMsg] = useState({ type: '', text: '' });
+  const [editAbsensiId, setEditAbsensiId] = useState<number | null>(null);
+  const [editAbsensiStatus, setEditAbsensiStatus] = useState('');
+  const [savingAbsensiStatus, setSavingAbsensiStatus] = useState(false);
 
   // Sertifikat
   const [sertifikatList, setSertifikatList] = useState<SertifikatRecord[]>([]);
@@ -92,6 +97,15 @@ function AdminDashboard() {
   const [fileSertifikat, setFileSertifikat] = useState<File | null>(null);
   const [catatanAdmin, setCatatanAdmin] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit peserta modal
+  const [editPeserta, setEditPeserta] = useState<Peserta | null>(null);
+  const [editStatusPKL, setEditStatusPKL] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editMsg, setEditMsg] = useState({ type: '', text: '' });
+
+  // Multi-file berkas state
+  const [fileBerkasList, setFileBerkasList] = useState<File[]>([]);
 
   // Foto absensi preview
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
@@ -113,7 +127,7 @@ function AdminDashboard() {
     if (activeMenu === 'peserta') fetchPeserta();
     if (activeMenu === 'pendaftaran') fetchPeserta();
     if (activeMenu === 'absensi') fetchAbsensi();
-    if (activeMenu === 'sertifikat') fetchSertifikat();
+    if (activeMenu === 'berkas') fetchSertifikat();
     if (activeMenu === 'jadwal') fetchJadwal();
   }, [activeMenu]);
 
@@ -211,38 +225,63 @@ function AdminDashboard() {
   };
 
   const handleKirimSertifikat = async (id: number) => {
-    if (!fileSertifikat) { setSertifikatMsg({ type: 'error', text: 'Pilih file PDF sertifikat terlebih dahulu!' }); return; }
+    if (fileBerkasList.length === 0) { setSertifikatMsg({ type: 'error', text: 'Pilih minimal 1 file PDF berkas terlebih dahulu!' }); return; }
     setUploadingId(id);
     setSertifikatMsg({ type: '', text: '' });
     try {
       const fd = new FormData();
       fd.append('status', 'diberikan');
-      fd.append('file_sertifikat', fileSertifikat);
+      fileBerkasList.forEach(f => fd.append('file_berkas', f));
       if (catatanAdmin.trim()) fd.append('catatan', catatanAdmin.trim());
       await api.post(`/sertifikat/${id}/verifikasi`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setSertifikatMsg({ type: 'success', text: 'Sertifikat berhasil dikirim ke peserta!' });
+      setSertifikatMsg({ type: 'success', text: 'Berkas berhasil dikirim ke peserta!' });
       setShowUploadModal(null);
-      setFileSertifikat(null);
+      setFileBerkasList([]);
       setCatatanAdmin('');
       fetchSertifikat();
     } catch (err: any) {
-      setSertifikatMsg({ type: 'error', text: err.response?.data?.message || 'Gagal mengirim sertifikat.' });
+      setSertifikatMsg({ type: 'error', text: err.response?.data?.message || 'Gagal mengirim berkas.' });
     } finally { setUploadingId(null); }
   };
 
   const handleTolakSertifikat = async (id: number) => {
-    if (!confirm('Yakin ingin menolak permintaan sertifikat ini?')) return;
+    if (!confirm('Yakin ingin menolak permintaan berkas ini?')) return;
     setUploadingId(id);
     setSertifikatMsg({ type: '', text: '' });
     try {
       const fd = new FormData();
       fd.append('status', 'ditolak');
       await api.post(`/sertifikat/${id}/verifikasi`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setSertifikatMsg({ type: 'success', text: 'Permintaan sertifikat ditolak.' });
+      setSertifikatMsg({ type: 'success', text: 'Permintaan berkas ditolak.' });
       fetchSertifikat();
     } catch (err: any) {
       setSertifikatMsg({ type: 'error', text: err.response?.data?.message || 'Gagal menolak permintaan.' });
     } finally { setUploadingId(null); }
+  };
+
+  const handleEditPeserta = (p: Peserta) => {
+    setEditPeserta(p);
+    setEditStatusPKL(p.status_pkl || 'pending');
+    setEditMsg({ type: '', text: '' });
+  };
+
+  const handleSaveEditPeserta = async () => {
+    if (!editPeserta) return;
+    setSavingEdit(true);
+    setEditMsg({ type: '', text: '' });
+    try {
+      await api.put(`/peserta/${editPeserta.id_peserta}`, { status_pkl: editStatusPKL });
+      setPesertaList(list => list.map(p =>
+        p.id_peserta === editPeserta.id_peserta ? { ...p, status_pkl: editStatusPKL } : p
+      ));
+      setEditMsg({ type: 'success', text: 'Status peserta berhasil diperbarui.' });
+      setTimeout(() => setEditPeserta(null), 1200);
+      fetchStats();
+    } catch (err: any) {
+      setEditMsg({ type: 'error', text: err.response?.data?.message || 'Gagal memperbarui status.' });
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const handleDeletePeserta = async (id: number) => {
@@ -302,6 +341,24 @@ function AdminDashboard() {
     }
   };
 
+  const handleUpdateAbsensiStatus = async () => {
+    if (!editAbsensiId) return;
+    setSavingAbsensiStatus(true);
+    setAbsensiMsg({ type: '', text: '' });
+    try {
+      await api.put(`/absensi/${editAbsensiId}/status`, { status: editAbsensiStatus });
+      setAbsensiList(list => list.map(a =>
+        a.id_absensi === editAbsensiId ? { ...a, status: editAbsensiStatus } : a
+      ));
+      setAbsensiMsg({ type: 'success', text: 'Status absensi berhasil diperbarui.' });
+      setEditAbsensiId(null);
+    } catch (err: any) {
+      setAbsensiMsg({ type: 'error', text: err.response?.data?.message || 'Gagal memperbarui status absensi.' });
+    } finally {
+      setSavingAbsensiStatus(false);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -343,7 +400,7 @@ function AdminDashboard() {
     { id: 'absensi', label: 'Data Absensi', icon: 'clock' },
     { id: 'pendaftaran', label: 'Pendaftaran', icon: 'file' },
     { id: 'laporan', label: 'Laporan', icon: 'file' },
-    { id: 'sertifikat', label: 'Sertifikat', icon: 'award' },
+    { id: 'berkas', label: 'Berkas', icon: 'award' },
     { id: 'jadwal', label: 'Pengaturan Jadwal', icon: 'settings' },
   ];
 
@@ -364,7 +421,7 @@ function AdminDashboard() {
     if (activeMenu === 'absensi') return 'Data Absensi';
     if (activeMenu === 'pendaftaran') return 'Verifikasi Pendaftaran';
     if (activeMenu === 'laporan') return 'Laporan Absensi';
-    if (activeMenu === 'sertifikat') return 'Manajemen Sertifikat';
+    if (activeMenu === 'berkas') return 'Manajemen Berkas';
     if (activeMenu === 'jadwal') return 'Pengaturan Jadwal Absensi';
     return 'Dashboard Admin';
   };
@@ -423,6 +480,47 @@ function AdminDashboard() {
       {/* Mobile Overlay */}
       {mobileOverlay && (
         <div className="sidebar-overlay" onClick={() => { setSidebarOpen(false); setMobileOverlay(false); }} />
+      )}
+
+      {/* Edit Peserta Status Modal */}
+      {editPeserta !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: '20px', padding: '2rem', width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ color: '#0f3d24', marginBottom: '0.5rem', fontSize: '1.1rem', fontWeight: 700 }}>✏️ Edit Data Peserta</h3>
+            <p style={{ color: '#5a5a6e', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Peserta: <strong>{editPeserta.user?.nama || '-'}</strong></p>
+            {editMsg.text && (
+              <div style={{ marginBottom: '1rem', padding: '0.7rem 1rem', borderRadius: '10px', fontSize: '0.85rem', background: editMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${editMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: editMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
+                {editMsg.text}
+              </div>
+            )}
+            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+              <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24', marginBottom: '0.5rem', display: 'block' }}>Status PKL</label>
+              <select
+                value={editStatusPKL}
+                onChange={e => setEditStatusPKL(e.target.value)}
+                style={{ width: '100%', padding: '0.75rem 1rem', border: '1.5px solid #e2e8f0', borderRadius: '10px', fontSize: '0.9rem', background: '#f8faf9', color: '#0f3d24', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
+              >
+                <option value="pending">Pending</option>
+                <option value="diterima">Diterima</option>
+                <option value="ditolak">Ditolak</option>
+                <option value="selesai">Selesai</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setEditPeserta(null)}
+                style={{ padding: '0.6rem 1.2rem', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#5a5a6e' }}
+              >Batal</button>
+              <button
+                onClick={handleSaveEditPeserta}
+                disabled={savingEdit}
+                style={{ padding: '0.6rem 1.4rem', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
+              >
+                {savingEdit ? '⌛ Menyimpan...' : '💾 Simpan'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Sidebar */}
@@ -601,6 +699,9 @@ function AdminDashboard() {
                                     </button>
                                   </>
                                 )}
+                                <button onClick={() => handleEditPeserta(p)} className="btn-action-edit" title="Edit Status" style={{ background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '8px', padding: '0.35rem 0.5rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
                                 <button onClick={() => handleDeletePeserta(p.id_peserta)} className="btn-action-delete" title="Hapus">
                                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                                 </button>
@@ -701,16 +802,61 @@ function AdminDashboard() {
                 </div>
               )}
 
+              {/* Edit Status Absensi Modal */}
+              {editAbsensiId !== null && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2001 }}>
+                  <div style={{ background: '#fff', borderRadius: '20px', padding: '2rem', width: '100%', maxWidth: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+                    <h3 style={{ color: '#0f3d24', marginBottom: '0.5rem', fontSize: '1.1rem', fontWeight: 700 }}>✏️ Edit Status Absensi</h3>
+                    <p style={{ color: '#5a5a6e', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Ubah status kehadiran untuk record ini.</p>
+                    {absensiMsg.text && (
+                      <div style={{ marginBottom: '1rem', padding: '0.7rem 1rem', borderRadius: '10px', fontSize: '0.85rem', background: absensiMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${absensiMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: absensiMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
+                        {absensiMsg.text}
+                      </div>
+                    )}
+                    <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                      <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24', marginBottom: '0.5rem', display: 'block' }}>Status Kehadiran</label>
+                      <select
+                        value={editAbsensiStatus}
+                        onChange={e => setEditAbsensiStatus(e.target.value)}
+                        style={{ width: '100%', padding: '0.75rem 1rem', border: '1.5px solid #e2e8f0', borderRadius: '10px', fontSize: '0.9rem', background: '#f8faf9', color: '#0f3d24', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
+                      >
+                        <option value="hadir">Hadir</option>
+                        <option value="telat">Telat</option>
+                        <option value="tidak hadir">Tidak Hadir</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => { setEditAbsensiId(null); setAbsensiMsg({ type: '', text: '' }); }}
+                        style={{ padding: '0.6rem 1.2rem', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#5a5a6e' }}
+                      >Batal</button>
+                      <button
+                        onClick={handleUpdateAbsensiStatus}
+                        disabled={savingAbsensiStatus}
+                        style={{ padding: '0.6rem 1.4rem', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
+                      >
+                        {savingAbsensiStatus ? '⌛ Menyimpan...' : '💾 Simpan'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="dash-table-card">
                 <div className="dash-table-header">
                   <h3>Data Absensi Seluruh Peserta</h3>
+                  {absensiMsg.text && !editAbsensiId && (
+                    <div style={{ padding: '0.4rem 0.9rem', borderRadius: '8px', fontSize: '0.82rem', background: absensiMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', color: absensiMsg.type === 'error' ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
+                      {absensiMsg.text}
+                    </div>
+                  )}
                 </div>
                 <div className="dash-table-wrapper">
                   {loadingAbsensi ? (
                     <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat data...</div>
                   ) : (
                     <table className="dash-table">
-                      <thead><tr><th>No</th><th>Nama</th><th>Tanggal</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Lokasi</th><th>Foto</th></tr></thead>
+                      <thead><tr><th>No</th><th>Nama</th><th>Tanggal</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Aksi</th><th>Lokasi</th><th>Foto</th></tr></thead>
                       <tbody>
                         {absensiList.map((a, i) => (
                           <tr key={a.id_absensi}>
@@ -720,13 +866,22 @@ function AdminDashboard() {
                             <td>{formatTimeStr(a.jam_masuk)}</td>
                             <td>{formatTimeStr(a.jam_pulang)}</td>
                             <td><span className={`status-badge status-${a.status.replace(' ', '-')}`}>{a.status}</span></td>
+                            <td>
+                              <button
+                                onClick={() => { setEditAbsensiId(a.id_absensi); setEditAbsensiStatus(a.status); setAbsensiMsg({ type: '', text: '' }); }}
+                                title="Edit Status Absensi"
+                                style={{ background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '8px', padding: '0.35rem 0.5rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                            </td>
                             <td>{a.lokasi || '-'}</td>
                             <td>
                               {a.foto ? (
                                 <img
-                                  src={`http://localhost:8080/uploads/${a.foto}`}
+                                  src={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/uploads/${a.foto}`}
                                   alt="Foto Absensi"
-                                  onClick={() => setFotoPreview(`http://localhost:8080/uploads/${a.foto}`)}
+                                  onClick={() => setFotoPreview(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/uploads/${a.foto}`)}
                                   style={{
                                     width: '42px', height: '42px', objectFit: 'cover',
                                     borderRadius: '8px', cursor: 'zoom-in',
@@ -742,7 +897,7 @@ function AdminDashboard() {
                             </td>
                           </tr>
                         ))}
-                        {absensiList.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data absensi</td></tr>}
+                        {absensiList.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#8a8a9e' }}>Belum ada data absensi</td></tr>}
                       </tbody>
                     </table>
                   )}
@@ -753,8 +908,8 @@ function AdminDashboard() {
 
           {activeMenu === 'laporan' && <LaporanAbsensi />}
 
-          {/* ======= SERTIFIKAT (ADMIN) ======= */}
-          {activeMenu === 'sertifikat' && (
+          {/* ======= BERKAS (ADMIN) ======= */}
+          {activeMenu === 'berkas' && (
             <div className="dashboard-home">
               {sertifikatMsg.text && (
                 <div className={`dashboard-alert dashboard-alert-${sertifikatMsg.type}`} style={{ marginBottom: '1rem' }}>{sertifikatMsg.text}</div>
@@ -764,16 +919,26 @@ function AdminDashboard() {
               {showUploadModal !== null && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
                   <div style={{ background: '#fff', borderRadius: '20px', padding: '2rem', width: '100%', maxWidth: '480px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-                    <h3 style={{ color: '#0f3d24', marginBottom: '1.5rem', fontSize: '1.1rem', fontWeight: 700 }}>📄 Kirim Sertifikat PDF</h3>
+                    <h3 style={{ color: '#0f3d24', marginBottom: '0.5rem', fontSize: '1.1rem', fontWeight: 700 }}>📂 Kirim Berkas PDF</h3>
+                    <p style={{ color: '#5a5a6e', fontSize: '0.82rem', marginBottom: '1.2rem' }}>Anda dapat mengupload lebih dari 1 file berkas (PDF) untuk peserta ini.</p>
                     <div className="form-group" style={{ marginBottom: '1rem' }}>
-                      <label className="form-label">File Sertifikat (PDF) *</label>
+                      <label className="form-label">File Berkas (PDF) * <span style={{ fontSize: '0.78rem', color: '#8a8a9e', fontWeight: 400 }}>— boleh lebih dari 1 file</span></label>
                       <input
                         ref={fileInputRef}
                         type="file"
                         accept="application/pdf"
-                        onChange={e => setFileSertifikat(e.target.files?.[0] || null)}
+                        multiple
+                        onChange={e => {
+                          const files = Array.from(e.target.files || []);
+                          setFileBerkasList(files);
+                        }}
                         style={{ display: 'block', width: '100%', fontSize: '0.88rem', padding: '0.5rem', border: '1.5px solid #e2e8f0', borderRadius: '8px' }}
                       />
+                      {fileBerkasList.length > 0 && (
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#1a5c38', fontWeight: 600 }}>
+                          {fileBerkasList.length} file dipilih: {fileBerkasList.map(f => f.name).join(', ')}
+                        </div>
+                      )}
                     </div>
                     <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                       <label className="form-label">Catatan (opsional)</label>
@@ -787,7 +952,7 @@ function AdminDashboard() {
                     </div>
                     <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                       <button
-                        onClick={() => { setShowUploadModal(null); setFileSertifikat(null); setCatatanAdmin(''); setSertifikatMsg({ type: '', text: '' }); }}
+                        onClick={() => { setShowUploadModal(null); setFileBerkasList([]); setCatatanAdmin(''); setSertifikatMsg({ type: '', text: '' }); }}
                         style={{ padding: '0.6rem 1.2rem', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#5a5a6e' }}
                       >Batal</button>
                       <button
@@ -795,7 +960,7 @@ function AdminDashboard() {
                         disabled={uploadingId === showUploadModal}
                         style={{ padding: '0.6rem 1.4rem', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1a5c38, #2d8a56)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                       >
-                        {uploadingId === showUploadModal ? '⌛ Mengirim...' : '📤 Kirim Sertifikat'}
+                        {uploadingId === showUploadModal ? '⌛ Mengirim...' : '📤 Kirim Berkas'}
                       </button>
                     </div>
                   </div>
@@ -804,7 +969,7 @@ function AdminDashboard() {
 
               <div className="dash-table-card">
                 <div className="dash-table-header">
-                  <h3>Permintaan Sertifikat ({sertifikatList.length})</h3>
+                  <h3>Permintaan Berkas ({sertifikatList.length})</h3>
                   <button
                     onClick={fetchSertifikat}
                     style={{ background: 'none', border: '1.5px solid #1a5c38', color: '#1a5c38', borderRadius: '8px', padding: '0.35rem 0.9rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
@@ -842,9 +1007,22 @@ function AdminDashboard() {
                               }}>{s.status}</span>
                             </td>
                             <td>
-                              {s.file_sertifikat ? (
+                              {(s.file_berkas && s.file_berkas.length > 0) ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                  {s.file_berkas.map((f, idx) => (
+                                    <a
+                                      key={idx}
+                                      href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/uploads/${f}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="status-badge"
+                                      style={{ background: '#dbeafe', color: '#1d4ed8', textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}
+                                    >📥 Berkas {s.file_berkas!.length > 1 ? idx + 1 : ''}</a>
+                                  ))}
+                                </div>
+                              ) : s.file_sertifikat ? (
                                 <a
-                                  href={`http://localhost:8080/uploads/${s.file_sertifikat}`}
+                                  href={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/uploads/${s.file_sertifikat}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="status-badge"
@@ -856,7 +1034,7 @@ function AdminDashboard() {
                               {s.status === 'pending' && (
                                 <div className="table-actions">
                                   <button
-                                    onClick={() => { setSertifikatMsg({ type: '', text: '' }); setShowUploadModal(s.id_sertifikat); setFileSertifikat(null); setCatatanAdmin(''); }}
+                                    onClick={() => { setSertifikatMsg({ type: '', text: '' }); setShowUploadModal(s.id_sertifikat); setFileBerkasList([]); setCatatanAdmin(''); }}
                                     className="btn-action-accept"
                                     title="Kirim Sertifikat PDF"
                                     disabled={uploadingId === s.id_sertifikat}

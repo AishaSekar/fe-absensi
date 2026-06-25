@@ -224,7 +224,7 @@ function LandingPage() {
         <div className="about-container">
           <div className="about-image-wrapper scroll-animate">
             <img
-              src="/images/gedung.png"
+              src="/images/bpti.png"
               alt="Gedung BPTI UHAMKA"
               className="about-image"
             />
