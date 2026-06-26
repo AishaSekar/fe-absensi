@@ -274,7 +274,7 @@ function UserDashboard() {
     try {
       const fd = new FormData();
       if (catatanRequest.trim()) fd.append('catatan', catatanRequest.trim());
-      await api.post('/sertifikat/request', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await api.post('/sertifikat/request', fd);
       setSertifikatMsg({ type: 'success', text: 'Permintaan sertifikat berhasil dikirim! Tunggu konfirmasi admin.' });
       setCatatanRequest('');
       recordActivity('Request sertifikat', 'Mengirim permintaan sertifikat ke admin');

@@ -244,7 +244,7 @@ function AdminDashboard() {
       fd.append('status', 'diberikan');
       fileBerkasList.forEach(f => fd.append('file_berkas', f));
       if (catatanAdmin.trim()) fd.append('catatan', catatanAdmin.trim());
-      await api.post(`/sertifikat/${id}/verifikasi`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await api.post(`/sertifikat/${id}/verifikasi`, fd);
       setSertifikatMsg({ type: 'success', text: 'Berkas berhasil dikirim ke peserta!' });
       setShowUploadModal(null);
       setFileBerkasList([]);
@@ -262,7 +262,7 @@ function AdminDashboard() {
     try {
       const fd = new FormData();
       fd.append('status', 'ditolak');
-      await api.post(`/sertifikat/${id}/verifikasi`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await api.post(`/sertifikat/${id}/verifikasi`, fd);
       setSertifikatMsg({ type: 'success', text: 'Permintaan berkas ditolak.' });
       fetchSertifikat();
     } catch (err: any) {
