@@ -62,23 +62,7 @@ interface SertifikatRecord {
   tanggal_diberikan?: string;
 }
 
-const ACTIVITY_STORAGE_KEY = 'user_activity_logs';
 
-function loadLocalActivityLogs(): ActivityLog[] {
-  try {
-    const raw = sessionStorage.getItem(ACTIVITY_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalActivityLog(log: ActivityLog) {
-  const logs = loadLocalActivityLogs();
-  logs.unshift(log);
-  const trimmed = logs.slice(0, 50); // keep last 50
-  sessionStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(trimmed));
-}
 
 function UserDashboard() {
   const navigate = useNavigate();
@@ -100,7 +84,6 @@ function UserDashboard() {
   const [jadwal, setJadwal] = useState<{ jam_masuk: string; jam_pulang: string } | null>(null);
 
   // Pendaftaran states
-  const [pendaftaranList, setPendaftaranList] = useState<PendaftaranRecord[]>([]);
   const [loadingPendaftaran, setLoadingPendaftaran] = useState(false);
   const [fileSurat, setFileSurat] = useState<File | null>(null);
   const [pendaftaranForm, setPendaftaranForm] = useState<PendaftaranForm>({
@@ -239,7 +222,7 @@ function UserDashboard() {
       const res = await api.get('/absensi/history');
       const rows = unwrapList(res.data)
         .map(normalizeAbsensi)
-        .sort((a, b) => getDateValue(b.tanggal || b.jam_masuk) - getDateValue(a.tanggal || a.jam_masuk));
+        .sort((a: AbsensiRecord, b: AbsensiRecord) => getDateValue(b.tanggal || b.jam_masuk) - getDateValue(a.tanggal || a.jam_masuk));
       setAbsensiHistory(rows);
     } catch {
       setAbsensiHistory([]);
@@ -262,11 +245,18 @@ function UserDashboard() {
     }
   };
 
-  // Activity logs are stored locally in sessionStorage
-  const fetchActivityLogs = () => {
+  // Activity logs diambil dari database backend
+  const fetchActivityLogs = async () => {
     setLoadingActivity(true);
-    setActivityLogs(loadLocalActivityLogs());
-    setLoadingActivity(false);
+    try {
+      const res = await api.get('/log-aktivitas');
+      const data = res.data?.data || [];
+      setActivityLogs(data);
+    } catch {
+      setActivityLogs([]);
+    } finally {
+      setLoadingActivity(false);
+    }
   };
 
   const fetchSertifikat = async () => {
@@ -294,15 +284,10 @@ function UserDashboard() {
     } finally { setSubmittingRequest(false); }
   };
 
-  const recordActivity = (aktivitas: string, keterangan?: string) => {
-    const log: ActivityLog = {
-      id_log: Date.now(),
-      aktivitas,
-      keterangan,
-      created_at: new Date().toISOString(),
-    };
-    saveLocalActivityLog(log);
-    setActivityLogs(loadLocalActivityLogs());
+  const recordActivity = (_aktivitas: string, _keterangan?: string) => {
+    // Log aktivitas sekarang dicatat oleh backend secara otomatis
+    // Refresh log dari database setelah aksi selesai
+    setTimeout(() => fetchActivityLogs(), 500);
   };
 
   const getAbsensiErrorMsg = (err: any): string => {
@@ -834,7 +819,16 @@ function UserDashboard() {
           {activeMenu === 'aktivitas' && (
             <div className="dashboard-home">
               <div className="dash-table-card">
-                <div className="dash-table-header"><h3>Log Aktivitas</h3><span style={{ fontSize: '0.78rem', color: '#8a8a9e' }}>Disimpan di sesi ini</span></div>
+                <div className="dash-table-header">
+                  <h3>Log Aktivitas</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span style={{ fontSize: '0.78rem', color: '#8a8a9e' }}>Tersimpan di database</span>
+                    <button
+                      onClick={fetchActivityLogs}
+                      style={{ background: 'none', border: '1.5px solid #1a5c38', color: '#1a5c38', borderRadius: '8px', padding: '0.25rem 0.7rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem' }}
+                    >🔄 Refresh</button>
+                  </div>
+                </div>
                 {loadingActivity ? (
                   <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Memuat aktivitas...</div>
                 ) : (
@@ -850,7 +844,10 @@ function UserDashboard() {
                       </div>
                     ))}
                     {activityLogs.length === 0 && (
-                      <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>Belum ada log aktivitas di sesi ini</div>
+                      <div style={{ padding: '3rem', textAlign: 'center', color: '#8a8a9e' }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📋</div>
+                        Belum ada log aktivitas
+                      </div>
                     )}
                   </div>
                 )}

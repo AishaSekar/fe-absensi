@@ -24,6 +24,7 @@ interface Peserta {
   nim_nis: string;
   asal_instansi: string;
   jurusan: string;
+  divisi?: string;
   no_hp?: string;
   status_pkl: string;
   created_at: string;
@@ -34,6 +35,7 @@ interface Peserta {
     file_cv: string;
     file_surat_lamaran: string;
     status: string;
+    divisi?: string;
   };
 }
 
@@ -43,10 +45,10 @@ interface AbsensiRecord {
   tanggal: string;
   jam_masuk?: string;
   jam_pulang?: string;
-  status: string;
-  lokasi?: string;
+  status: 'hadir' | 'telat' | 'tidak hadir';
   foto?: string;
-  peserta?: { nim_nis: string; user?: { nama: string } };
+  lokasi?: string;
+  peserta?: Peserta;
 }
 
 interface SertifikatRecord {
@@ -59,9 +61,11 @@ interface SertifikatRecord {
   catatan?: string;
   tanggal_request: string;
   tanggal_diberikan?: string;
-  peserta?: { nim_nis: string; user?: { nama: string } };
+  peserta?: Peserta;
   user?: { nama: string; email: string };
 }
+
+const ACTIVITY_STORAGE_KEY = 'admin_activity_logs';
 
 function AdminDashboard() {
   const navigate = useNavigate();
@@ -100,6 +104,13 @@ function AdminDashboard() {
 
   // Edit peserta modal
   const [editPeserta, setEditPeserta] = useState<Peserta | null>(null);
+  const [editNama, setEditNama] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editNimNis, setEditNimNis] = useState('');
+  const [editAsalInstansi, setEditAsalInstansi] = useState('');
+  const [editJurusan, setEditJurusan] = useState('');
+  const [editDivisi, setEditDivisi] = useState('');
+  const [editNoHp, setEditNoHp] = useState('');
   const [editStatusPKL, setEditStatusPKL] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [editMsg, setEditMsg] = useState({ type: '', text: '' });
@@ -261,6 +272,13 @@ function AdminDashboard() {
 
   const handleEditPeserta = (p: Peserta) => {
     setEditPeserta(p);
+    setEditNama(p.user?.nama || '');
+    setEditEmail(p.user?.email || '');
+    setEditNimNis(p.nim_nis || '');
+    setEditAsalInstansi(p.asal_instansi || '');
+    setEditJurusan(p.jurusan || '');
+    setEditDivisi(p.divisi || p.pendaftaran?.divisi || '');
+    setEditNoHp(p.no_hp || '');
     setEditStatusPKL(p.status_pkl || 'pending');
     setEditMsg({ type: '', text: '' });
   };
@@ -270,15 +288,27 @@ function AdminDashboard() {
     setSavingEdit(true);
     setEditMsg({ type: '', text: '' });
     try {
-      await api.put(`/peserta/${editPeserta.id_peserta}`, { status_pkl: editStatusPKL });
+      const payload = {
+        nama: editNama.trim(),
+        email: editEmail.trim(),
+        nim_nis: editNimNis.trim(),
+        asal_instansi: editAsalInstansi.trim(),
+        jurusan: editJurusan.trim(),
+        divisi: editDivisi,
+        no_hp: editNoHp.trim() || null,
+        status_pkl: editStatusPKL,
+      };
+      const res = await api.put(`/peserta/${editPeserta.id_peserta}`, payload);
+      const updatedData = res.data.data;
+
       setPesertaList(list => list.map(p =>
-        p.id_peserta === editPeserta.id_peserta ? { ...p, status_pkl: editStatusPKL } : p
+        p.id_peserta === editPeserta.id_peserta ? { ...p, ...updatedData } : p
       ));
-      setEditMsg({ type: 'success', text: 'Status peserta berhasil diperbarui.' });
+      setEditMsg({ type: 'success', text: 'Data peserta berhasil diperbarui.' });
       setTimeout(() => setEditPeserta(null), 1200);
       fetchStats();
     } catch (err: any) {
-      setEditMsg({ type: 'error', text: err.response?.data?.message || 'Gagal memperbarui status.' });
+      setEditMsg({ type: 'error', text: err.response?.data?.message || 'Gagal memperbarui data peserta.' });
     } finally {
       setSavingEdit(false);
     }
@@ -326,9 +356,14 @@ function AdminDashboard() {
 
     try {
       await updatePesertaStatus(id, status);
-      setPesertaList((list) => list.map((item) => (
-        item.id_peserta === id ? { ...item, status_pkl: status } : item
-      )));
+      // Perbarui status_pkl dan juga status di dalam objek pendaftaran sekaligus
+      setPesertaList((list) => list.map((item) => {
+        if (item.id_peserta !== id) return item;
+        const updatedPendaftaran = item.pendaftaran
+          ? { ...item.pendaftaran, status }
+          : item.pendaftaran;
+        return { ...item, status_pkl: status, pendaftaran: updatedPendaftaran };
+      }));
       setVerifikasiMsg({ type: 'success', text: `Peserta berhasil ${status}.` });
       fetchStats();
     } catch (err: any) {
@@ -474,6 +509,8 @@ function AdminDashboard() {
   };
 
   const pendingPeserta = pesertaList.filter((p) => p.status_pkl?.toLowerCase() === 'pending');
+  // Semua peserta yang sudah submit pendaftaran (apapun statusnya)
+  const registeredPeserta = pesertaList.filter((p) => p.pendaftaran != null);
 
   return (
     <div className="dashboard-layout">
@@ -482,29 +519,115 @@ function AdminDashboard() {
         <div className="sidebar-overlay" onClick={() => { setSidebarOpen(false); setMobileOverlay(false); }} />
       )}
 
-      {/* Edit Peserta Status Modal */}
+      {/* Edit Peserta Modal */}
       {editPeserta !== null && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: '20px', padding: '2rem', width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h3 style={{ color: '#0f3d24', marginBottom: '0.5rem', fontSize: '1.1rem', fontWeight: 700 }}>✏️ Edit Data Peserta</h3>
-            <p style={{ color: '#5a5a6e', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Peserta: <strong>{editPeserta.user?.nama || '-'}</strong></p>
+          <div style={{ background: '#fff', borderRadius: '20px', padding: '2rem', width: '90%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ color: '#0f3d24', marginBottom: '1.2rem', fontSize: '1.2rem', fontWeight: 700 }}>✏️ Edit Data Peserta</h3>
             {editMsg.text && (
               <div style={{ marginBottom: '1rem', padding: '0.7rem 1rem', borderRadius: '10px', fontSize: '0.85rem', background: editMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', border: `1px solid ${editMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}`, color: editMsg.type === 'error' ? '#dc2626' : '#16a34a' }}>
                 {editMsg.text}
               </div>
             )}
-            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-              <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24', marginBottom: '0.5rem', display: 'block' }}>Status PKL</label>
-              <select
-                value={editStatusPKL}
-                onChange={e => setEditStatusPKL(e.target.value)}
-                style={{ width: '100%', padding: '0.75rem 1rem', border: '1.5px solid #e2e8f0', borderRadius: '10px', fontSize: '0.9rem', background: '#f8faf9', color: '#0f3d24', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
-              >
-                <option value="pending">Pending</option>
-                <option value="diterima">Diterima</option>
-                <option value="ditolak">Ditolak</option>
-                <option value="selesai">Selesai</option>
-              </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Nama Lengkap</label>
+                <input
+                  type="text"
+                  value={editNama}
+                  onChange={e => setEditNama(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '1rem' }}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Email</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '1rem' }}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>NIM / NIS</label>
+                <input
+                  type="text"
+                  value={editNimNis}
+                  onChange={e => setEditNimNis(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '1rem' }}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Asal Instansi</label>
+                <input
+                  type="text"
+                  value={editAsalInstansi}
+                  onChange={e => setEditAsalInstansi(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '1rem' }}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Jurusan</label>
+                <input
+                  type="text"
+                  value={editJurusan}
+                  onChange={e => setEditJurusan(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '1rem' }}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Divisi</label>
+                <select
+                  value={editDivisi}
+                  onChange={e => setEditDivisi(e.target.value)}
+                  className="form-input"
+                  style={{ appearance: 'auto', background: 'white', paddingLeft: '1rem' }}
+                  required
+                >
+                  <option value="" disabled>Pilih Divisi</option>
+                  <option value="Software Engineering">Software Engineering</option>
+                  <option value="Data Analyst">Data Analyst</option>
+                  <option value="Computer Network">Computer Network</option>
+                  <option value="Multimedia">Multimedia</option>
+                  <option value="Cyber Security">Cyber Security</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Nomor HP</label>
+                <input
+                  type="tel"
+                  value={editNoHp}
+                  onChange={e => setEditNoHp(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '1rem' }}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600, color: '#0f3d24' }}>Status PKL</label>
+                <select
+                  value={editStatusPKL}
+                  onChange={e => setEditStatusPKL(e.target.value)}
+                  className="form-input"
+                  style={{ appearance: 'auto', background: 'white', paddingLeft: '1rem' }}
+                  required
+                >
+                  <option value="pending">Pending</option>
+                  <option value="diterima">Diterima</option>
+                  <option value="ditolak">Ditolak</option>
+                  <option value="selesai">Selesai</option>
+                </select>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
               <button
@@ -699,7 +822,7 @@ function AdminDashboard() {
                                     </button>
                                   </>
                                 )}
-                                <button onClick={() => handleEditPeserta(p)} className="btn-action-edit" title="Edit Status" style={{ background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '8px', padding: '0.35rem 0.5rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <button onClick={() => handleEditPeserta(p)} className="btn-action-edit" title="Edit Data Peserta" style={{ background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '8px', padding: '0.35rem 0.5rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
                                 <button onClick={() => handleDeletePeserta(p.id_peserta)} className="btn-action-delete" title="Hapus">
@@ -726,7 +849,10 @@ function AdminDashboard() {
               )}
               <div className="dash-table-card">
                 <div className="dash-table-header">
-                  <h3>Menunggu Verifikasi ({pendingPeserta.length})</h3>
+                  <h3>Daftar Pendaftaran PKL ({registeredPeserta.length})</h3>
+                  <span style={{ fontSize: '0.8rem', color: '#8a8a9e', fontWeight: 500 }}>
+                    Pending: <strong style={{ color: '#f59e0b' }}>{pendingPeserta.length}</strong>
+                  </span>
                 </div>
                 <div className="dash-table-wrapper">
                   {loadingPeserta ? (
@@ -735,30 +861,65 @@ function AdminDashboard() {
                     <table className="dash-table">
                       <thead><tr><th>No</th><th>Nama</th><th>Email</th><th>NIM/NIS</th><th>Divisi</th><th>Asal Instansi</th><th>Jurusan</th><th>Berkas</th><th>Status</th><th>Aksi</th></tr></thead>
                       <tbody>
-                        {pendingPeserta.map((p, i) => (
+                        {registeredPeserta.map((p, i) => (
                           <tr key={p.id_peserta}>
                             <td>{i + 1}</td>
                             <td style={{ fontWeight: 600 }}>{p.user?.nama || '-'}</td>
                             <td>{p.user?.email || '-'}</td>
                             <td>{p.nim_nis}</td>
-                            <td>{p.pendaftaran?.divisi || '-'}</td>
+                            <td>{p.pendaftaran?.divisi || p.divisi || '-'}</td>
                             <td>{p.asal_instansi}</td>
                             <td>{p.jurusan}</td>
                             <td>{renderBerkasLinks(p)}</td>
-                            <td><span className={`status-badge status-${p.status_pkl?.toLowerCase()}`}>{p.status_pkl}</span></td>
                             <td>
-                              <div className="table-actions">
-                                <button onClick={() => handleVerifikasiPeserta(p.id_peserta, 'diterima')} className="btn-action-accept" title="Terima" disabled={processingPesertaId === p.id_peserta}>
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                </button>
-                                <button onClick={() => handleVerifikasiPeserta(p.id_peserta, 'ditolak')} className="btn-action-reject" title="Tolak" disabled={processingPesertaId === p.id_peserta}>
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                </button>
-                              </div>
+                              <span
+                                className={`status-badge status-${p.status_pkl?.toLowerCase()}`}
+                                style={{
+                                  background:
+                                    p.status_pkl?.toLowerCase() === 'diterima' ? '#d1fae5' :
+                                    p.status_pkl?.toLowerCase() === 'ditolak'  ? '#fee2e2' :
+                                    '#fef3c7',
+                                  color:
+                                    p.status_pkl?.toLowerCase() === 'diterima' ? '#065f46' :
+                                    p.status_pkl?.toLowerCase() === 'ditolak'  ? '#dc2626' :
+                                    '#92400e',
+                                }}
+                              >
+                                {p.status_pkl === 'pending' ? '⏳ Pending' :
+                                 p.status_pkl === 'diterima' ? '✅ Diterima' :
+                                 p.status_pkl === 'ditolak'  ? '❌ Ditolak'  :
+                                 p.status_pkl}
+                              </span>
+                            </td>
+                            <td>
+                              {p.status_pkl?.toLowerCase() === 'pending' ? (
+                                <div className="table-actions">
+                                  <button
+                                    onClick={() => handleVerifikasiPeserta(p.id_peserta, 'diterima')}
+                                    className="btn-action-accept"
+                                    title="Terima"
+                                    disabled={processingPesertaId === p.id_peserta}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleVerifikasiPeserta(p.id_peserta, 'ditolak')}
+                                    className="btn-action-reject"
+                                    title="Tolak"
+                                    disabled={processingPesertaId === p.id_peserta}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '0.78rem', color: '#8a8a9e', fontStyle: 'italic' }}>Sudah diverifikasi</span>
+                              )}
                             </td>
                           </tr>
                         ))}
-                        {pendingPeserta.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#8a8a9e' }}>Tidak ada pendaftaran yang menunggu verifikasi</td></tr>}
+                        {registeredPeserta.length === 0 && (
+                          <tr><td colSpan={10} style={{ textAlign: 'center', color: '#8a8a9e', padding: '2rem' }}>Belum ada data pendaftaran</td></tr>
+                        )}
                       </tbody>
                     </table>
                   )}
